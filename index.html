@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>dHybridR Input Generator</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="header-left">
+      <button id="btn-menu" class="menu-btn" aria-label="Menu">&#9776;</button>
+      <h1>dHybridR Input File Generator</h1>
+    </div>
+    <div class="header-controls">
+      <label class="dim-select">
+        <span>Dimensions:</span>
+        <select id="dim-select">
+          <option value="1">1D</option>
+          <option value="2" selected>2D</option>
+          <option value="3">3D</option>
+        </select>
+      </label>
+      <div class="header-buttons">
+        <button id="btn-load" title="Load input file">📂 Load</button>
+        <button id="btn-preset" title="Load preset">📋 Preset</button>
+        <button id="btn-generate" class="primary">⬇ Generate</button>
+      </div>
+    </div>
+  </header>
+
+  <input type="file" id="file-input" accept="*" style="display:none">
+
+  <div id="preset-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Load Preset</h3>
+      <div id="preset-list"></div>
+      <button class="modal-close">Cancel</button>
+    </div>
+  </div>
+
+  <div id="mobile-overlay" class="mobile-overlay"></div>
+  <div class="layout">
+    <nav id="sidebar">
+      <ul id="nav-list"></ul>
+    </nav>
+    <main id="main">
+      <div id="sections"></div>
+    </main>
+    <aside id="preview">
+      <div class="preview-header">
+        <h3>Preview</h3>
+        <button id="btn-copy" title="Copy to clipboard">📋 Copy</button>
+      </div>
+      <pre id="preview-text"></pre>
+    </aside>
+  </div>
+</div>
+<script src="schema.js"></script>
+<script src="generator.js"></script>
+<script src="parser.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
