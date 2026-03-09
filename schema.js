@@ -189,8 +189,7 @@ const SCHEMA = {
     required: true,
     fields: [
       { key: 'num_species', label: 'num_species', type: 'int', dim: 0, default: 1, hint: 'Number of ion species (\u22651)', min: 1, max: 10 },
-      { key: 'part_sort_step', label: 'part_sort_step', type: 'int', dim: 0, default: 1, hint: 'Sort step (overridden to 1)' },
-      { key: 'xnmin', label: 'XNMIN', type: 'real', dim: 0, default: 0, hint: 'Minimum density (0=none)' },
+      { key: 'xnmin', label: 'XNMIN', type: 'real', dim: 0, default: 0, hint: 'Legacy parameter — read from input but not used in simulation logic (safe to leave as 0)' },
     ]
   },
 
