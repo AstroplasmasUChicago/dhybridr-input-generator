@@ -690,10 +690,11 @@
       if (currentDim >= 2) bdAxes.push({ label: 'y', max: Number(boxsize[1]) || 0, stIdx: 1, endIdx: nInPlane + 1 });
     }
 
-    // Update planepos hint to show axis and range
-    const ppHint = container?.querySelector(`[data-key="planepos"]`);
-    if (ppHint) {
-      const hintEl = ppHint.closest('.field-row')?.querySelector('.hint');
+    // Update planepos hint and placeholder to show axis and range
+    const ppInput = container?.querySelector(`input[data-key="planepos"]`);
+    if (ppInput) {
+      ppInput.placeholder = planeMax > 0 ? `0…${planeMax}` : '0';
+      const hintEl = ppInput.closest('.field-row')?.querySelector('.hint');
       if (hintEl) {
         hintEl.textContent = planeMax > 0
           ? `Position along ${planeAxis} axis (0 … ${planeMax})`
@@ -708,7 +709,7 @@
       if (pp > planeMax) warnings.push(`planepos (${pp}) exceeds boxsize(${planeAxis})=${planeMax} — will be clipped`);
     }
 
-    // Update boundary array labels and hint to show axis names based on selected plane
+    // Update boundary array labels, hints, and placeholders based on selected plane
     if (container) {
       const bdInput = container.querySelector('[data-key="boundary"]');
       if (bdInput) {
@@ -719,6 +720,18 @@
           const labelArr = [...axLabels.map(l => `${l}-start`), ...axLabels.map(l => `${l}-end`)];
           const labelEls = arrayDiv.querySelectorAll('.array-col .label');
           labelEls.forEach((el, i) => { if (labelArr[i]) el.textContent = labelArr[i]; });
+          // Set placeholders showing valid range on each boundary input
+          // starts: 0…max, ends: 0…max
+          const bdInputs = arrayDiv.querySelectorAll('input[data-key="boundary"]');
+          bdInputs.forEach((inp, i) => {
+            const axIdx = i < nInPlane ? i : i - nInPlane;
+            const ax = bdAxes[axIdx];
+            if (ax && ax.max > 0) {
+              inp.placeholder = i < nInPlane ? `0…${ax.max}` : `0…${ax.max}`;
+            } else {
+              inp.placeholder = '0';
+            }
+          });
         }
         // Update boundary hint with in-plane axis info
         const bdHint = fieldRow?.querySelector('.hint');
