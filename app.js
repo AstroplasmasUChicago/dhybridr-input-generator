@@ -264,6 +264,8 @@
         inputHTML += `<option value="${opt}">${opt}</option>`;
       }
       inputHTML += `</select>`;
+    } else if (field.phaseCheckboxes) {
+      inputHTML = buildPhaseCheckboxes(skey, field, speciesIdx);
     } else if (field.textarea) {
       inputHTML = `<textarea ${dataAttr} rows="2" placeholder="${field.hint || ''}"></textarea>`;
     } else {
@@ -331,6 +333,36 @@
       const extraAttr = field.type === 'int' ? ' inputmode="numeric" class="int-field"' : '';
       html += `<input type="text" ${dataAttr} data-index="${i}"${extraAttr} style="width:80px">`;
       html += `</div>`;
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function buildPhaseCheckboxes(skey, field, speciesIdx) {
+    const dataAttr = speciesIdx !== undefined
+      ? `data-section="${skey}" data-key="${field.key}" data-species="${speciesIdx}"`
+      : `data-section="${skey}" data-key="${field.key}"`;
+    // Group the options
+    const groups = {};
+    for (const opt of field.phaseOptions) {
+      if (!groups[opt.group]) groups[opt.group] = [];
+      groups[opt.group].push(opt);
+    }
+    let html = '<div class="phase-checkbox-grid">';
+    for (const [groupName, opts] of Object.entries(groups)) {
+      const anyVisible = opts.some(o => o.minDim <= currentDim);
+      const groupHidden = anyVisible ? '' : 'dim-hidden';
+      html += `<div class="phase-group ${groupHidden}">`;
+      html += `<div class="phase-group-label">${groupName}</div>`;
+      html += `<div class="phase-group-items">`;
+      for (const opt of opts) {
+        // minDim 0 or 1 = always visible; 2 = needs DIM>=2; 3 = needs DIM>=3
+        const hidden = opt.minDim > currentDim ? 'dim-hidden' : '';
+        html += `<label class="phase-cb-label ${hidden}" data-mindim="${opt.minDim}">`;
+        html += `<input type="checkbox" ${dataAttr} data-phase="${opt.name}">`;
+        html += `<span>${opt.name}</span></label>`;
+      }
+      html += `</div></div>`;
     }
     html += '</div>';
     return html;
@@ -500,6 +532,21 @@
           return;
         }
 
+        // Phase checkbox handling
+        if (field && field.phaseCheckboxes && el.dataset.phase) {
+          // Collect all checked phase checkboxes for this field
+          const cbSelector = speciesIdx !== undefined
+            ? `[data-section="${skey}"][data-key="${field.key}"][data-species="${spIdx}"][data-phase]`
+            : `[data-section="${skey}"][data-key="${field.key}"][data-phase]`;
+          const checked = [];
+          container.querySelectorAll(cbSelector).forEach(cb => {
+            if (cb.checked) checked.push(cb.dataset.phase);
+          });
+          target[elKey] = checked.join(',');
+          updatePreview();
+          return;
+        }
+
         if (arrIdx !== undefined) {
           if (!Array.isArray(target[elKey])) target[elKey] = [];
           if (field.type === 'bool') {
@@ -601,9 +648,15 @@
             el.value = val[i] ?? '';
           }
         }
+      } else if (field.phaseCheckboxes) {
+        // Phase checkboxes: val is a comma-separated string
+        const selected = String(val || '').split(',').map(s => s.trim()).filter(s => s);
+        document.querySelectorAll(`${selector}[data-phase]`).forEach(cb => {
+          cb.checked = selected.includes(cb.dataset.phase);
+        });
       } else {
         // Scalar
-        const els = document.querySelectorAll(selector + ':not([data-index])');
+        const els = document.querySelectorAll(selector + ':not([data-index]):not([data-phase])');
         els.forEach(el => {
           if (field.type === 'bool') {
             el.checked = !!val;
@@ -658,6 +711,15 @@
           const defVal = field.default?.[data[field.key].length] ?? (field.type === 'strarr' ? 'per' : 0);
           data[field.key].push(defVal);
         }
+      }
+      // Filter out dim-incompatible phase space selections
+      if (field.phaseCheckboxes && typeof data[field.key] === 'string') {
+        const selected = data[field.key].split(',').map(s => s.trim()).filter(s => s);
+        const filtered = selected.filter(name => {
+          const opt = field.phaseOptions.find(o => o.name === name);
+          return opt ? opt.minDim <= currentDim : true;
+        });
+        data[field.key] = filtered.join(',');
       }
     }
   }

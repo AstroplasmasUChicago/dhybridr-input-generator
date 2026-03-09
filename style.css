@@ -156,6 +156,40 @@ header h1 { font-size: 18px; font-weight: 600; }
 }
 .dim-hidden { display: none !important; }
 
+/* Phase space checkbox grid */
+.phase-checkbox-grid {
+  display: flex; flex-direction: column; gap: 8px;
+}
+.phase-group {
+  display: flex; flex-direction: column; gap: 3px;
+}
+.phase-group-label {
+  font-size: 11px; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.04em; font-weight: 600;
+}
+.phase-group-items {
+  display: flex; flex-wrap: wrap; gap: 4px;
+}
+.phase-cb-label {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--input-bg); border: 1px solid var(--border);
+  border-radius: 5px; padding: 4px 8px; cursor: pointer;
+  font-size: 12px; font-family: 'SF Mono', Menlo, monospace;
+  transition: border-color 0.15s, background 0.15s;
+  user-select: none;
+}
+.phase-cb-label:hover {
+  border-color: var(--accent); background: var(--hover);
+}
+.phase-cb-label:has(input:checked) {
+  border-color: var(--accent); background: var(--accent-dim);
+  color: var(--accent);
+}
+.phase-cb-label input[type=checkbox] {
+  width: 13px; height: 13px; accent-color: var(--accent);
+  margin: 0;
+}
+
 /* Preview */
 #preview {
   background: var(--surface); border-left: 1px solid var(--border);
