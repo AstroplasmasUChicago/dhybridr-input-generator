@@ -92,19 +92,13 @@ function parseNamelistBody(body, schema, dim) {
   const assignments = [];
   let am;
   while ((am = assignRegex.exec(joined)) !== null) {
-    assignments.push({ key: am[1].toLowerCase(), start: am.index + am[0].length });
+    assignments.push({ key: am[1].toLowerCase(), start: am.index + am[0].length, matchStart: am.index });
   }
 
   for (let i = 0; i < assignments.length; i++) {
     const a = assignments[i];
-    const end = i + 1 < assignments.length ? assignments[i+1].start : joined.length;
-    // Walk back from next assignment start to find the key start
+    const end = i + 1 < assignments.length ? assignments[i+1].matchStart : joined.length;
     let rawVal = joined.slice(a.start, end);
-    // Find where next key= begins and trim
-    const nextKeyMatch = rawVal.match(/\s+\w+\s*(?:\([^)]*\))?\s*=$/);
-    if (nextKeyMatch) {
-      rawVal = rawVal.slice(0, nextKeyMatch.index);
-    }
     rawVal = rawVal.replace(/,\s*$/, '').trim();
 
     const field = fieldMap[a.key];
@@ -139,8 +133,17 @@ function parseNamelistBody(body, schema, dim) {
         const v = rawVal.trim().toLowerCase();
         data[field.key] = v === '.true.' || v === 'true' || v === 't';
       } else if (field.type === 'str') {
-        const sm = rawVal.match(/"([^"]*)"/);
-        data[field.key] = sm ? sm[1] : rawVal.trim();
+        // Special: phasespaces stores multiple quoted strings as comma-separated
+        if (field.key === 'phasespaces') {
+          const all = [];
+          const re = /"([^"]*)"/g;
+          let sm;
+          while ((sm = re.exec(rawVal)) !== null) all.push(sm[1]);
+          data[field.key] = all.length > 0 ? all.join(',') : rawVal.trim();
+        } else {
+          const sm = rawVal.match(/"([^"]*)"/);
+          data[field.key] = sm ? sm[1] : rawVal.trim();
+        }
       } else if (field.type === 'int') {
         data[field.key] = parseInt(rawVal) || 0;
       } else {

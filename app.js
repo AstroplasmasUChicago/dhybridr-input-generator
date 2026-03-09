@@ -91,6 +91,7 @@
       if (sec.multiPerSpecies) {
         // Array of arrays: state.plasma_injector[speciesIdx][injectorIdx]
         state[key] = [[buildDefaults(sec)]];
+        activeSpeciesIdx[key] = 0;
       } else if (sec.perSpecies) {
         state[key] = [buildDefaults(sec)];
         activeSpeciesIdx[key] = 0;
@@ -291,11 +292,16 @@
         const dimVis = getArrayElementDimClass(field, i);
         html += `<div class="array-col ${dimVis}">`;
         if (labels[i]) html += `<span class="label">${labels[i]}</span>`;
-        html += `<select ${dataAttr} data-index="${i}">`;
-        for (const opt of (field.options || [])) {
-          html += `<option value="${opt}">${opt}</option>`;
+        if (field.options) {
+          html += `<select ${dataAttr} data-index="${i}">`;
+          for (const opt of field.options) {
+            html += `<option value="${opt}">${opt}</option>`;
+          }
+          html += `</select>`;
+        } else {
+          html += `<input type="text" ${dataAttr} data-index="${i}">`;
         }
-        html += `</select></div>`;
+        html += `</div>`;
       }
       html += '</div>';
       return html;

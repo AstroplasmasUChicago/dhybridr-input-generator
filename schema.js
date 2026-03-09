@@ -218,7 +218,7 @@ const SCHEMA = {
       { key: 'vdrift', label: 'vdrift', type: 'real', dim: 'VDIM',
         default: [0,0,0], hint: 'Drift velocity', dimLabels: ['vx','vy','vz'] },
       { key: 'vth', label: 'vth', type: 'real', dim: 0, default: 1.0, hint: 'Thermal velocity' },
-      { key: 'vsp', label: 'vsp', type: 'str', dim: 'VDIM_STR',
+      { key: 'vsp', label: 'vsp', type: 'strarr', dim: 'VDIM_STR',
         default: ['','',''], hint: 'Velocity function expressions (overrides vdrift)',
         dimLabels: ['vsp_x','vsp_y','vsp_z'] },
       { key: 'vnorm', label: 'vnorm', type: 'real', dim: 'VDIM',
