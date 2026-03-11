@@ -17,7 +17,7 @@ A web-based input file generator for the **dHybridR** hybrid particle-in-cell pl
 
 ## Quick Start
 
-This is a **pure static site** — just HTML, CSS, and JavaScript. No npm, no bundler, no server-side code.
+This is a **pure static site** — just HTML, CSS, and JavaScript.
 
 ### Option 1: Local file server
 
