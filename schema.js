@@ -26,7 +26,7 @@ const SCHEMA = {
       { key: 'niter', label: 'niter', type: 'int', dim: 0, default: 2000, hint: 'Number of iterations' },
       { key: 't0', label: 't0', type: 'real', dim: 0, default: 0.0, hint: 'Initial time' },
       { key: 'stiter', label: 'stiter', type: 'int', dim: 0, default: 0, hint: 'Starting iteration number' },
-      { key: 'c', label: 'c', type: 'real', dim: 0, default: 200.0, hint: 'Speed of light' },
+      { key: 'c', label: 'c', type: 'real', dim: 0, default: 100.0, hint: 'Speed of light' },
     ]
   },
 
@@ -49,7 +49,6 @@ const SCHEMA = {
         dimLabels: ['x\u2097','x\u1d63','y\u2097','y\u1d63','z\u2097','z\u1d63'] },
       { key: 'K', label: 'K', type: 'real', dim: 0, default: 1.0, hint: 'Adiabatic constant (must be > 0)' },
       { key: 'gamma', label: 'gamma', type: 'real', dim: 0, default: 1.67, hint: 'Adiabatic index (must be > 0)' },
-      { key: 'mur_abc', label: 'mur_abc', type: 'bool', dim: 0, default: true, hint: 'Enable Mur absorbing boundary condition' },
     ]
   },
 
@@ -381,7 +380,7 @@ const PRESETS = [
     dim: 2,
     values: {
       node_conf: { node_number: [1,1] },
-      time: { dt: 0.0025, niter: 2000, c: 200 },
+      time: { dt: 0.0025, niter: 2000, c: 100 },
       grid_space: { ncells: [20,20], boxsize: [10,10], bdtype: ['per','per','per','per'] },
       ext_emf: { Bx: '0.6', By: '0.33', Bz: '-.25' },
       species: [{ num_par: [2,2], vth: 1 }],
@@ -395,7 +394,7 @@ const PRESETS = [
     dim: 3,
     values: {
       node_conf: { node_number: [1,1,1] },
-      time: { dt: 0.0025, niter: 2000, c: 200 },
+      time: { dt: 0.0025, niter: 2000, c: 100 },
       grid_space: { ncells: [20,20,20], boxsize: [10,10,10], bdtype: ['per','per','per','per','per','per'] },
       ext_emf: { Bx: '0.6', By: '0.33', Bz: '-.25' },
       species: [{ num_par: [2,2,2], vth: 1 }],
@@ -404,30 +403,14 @@ const PRESETS = [
     }
   },
   {
-    name: '2D Shock (Mur BC)',
-    desc: 'Parallel shock with Mur absorbing boundaries',
-    dim: 2,
-    values: {
-      node_conf: { node_number: [1,1] },
-      time: { dt: 0.0025, niter: 1024, c: 200 },
-      grid_space: { ncells: [128,128], boxsize: [64,64], bdtype: ['reflect','open','per','per'], mur_abc: true },
-      global_output: { ndump: 256, output_folder: 'OutputMur' },
-      ext_emf: { Bx: '1.', By: '0.', Bz: '0.' },
-      algorithm: { filternpass: 1, ifsmoothextfields: true },
-      species: [{ vdrift: [-220,0,0], vth: 1, num_par: [2,2] }],
-      boundary_conditions: [{ bdtype: ['reflect','open','per','per'], vth: 0 }],
-      restart: { restart_step: -1, restart_time: 7200, restart_time_step: 100 },
-    }
-  },
-  {
-    name: '2D Shock (Classic BC)',
+    name: '2D Shock',
     desc: 'Parallel shock with conducting/open boundaries',
     dim: 2,
     values: {
       node_conf: { node_number: [1,1] },
-      time: { dt: 0.0025, niter: 1024, c: 200 },
-      grid_space: { ncells: [128,128], boxsize: [64,64], bdtype: ['reflect','open','per','per'], mur_abc: false },
-      global_output: { ndump: 256, output_folder: 'OutputClassic' },
+      time: { dt: 0.0025, niter: 1024, c: 100 },
+      grid_space: { ncells: [128,128], boxsize: [64,64], bdtype: ['reflect','open','per','per'] },
+      global_output: { ndump: 256, output_folder: 'Output' },
       ext_emf: { Bx: '1.', By: '0.', Bz: '0.' },
       algorithm: { filternpass: 1, ifsmoothextfields: true },
       species: [{ vdrift: [-220,0,0], vth: 1, num_par: [2,2] }],

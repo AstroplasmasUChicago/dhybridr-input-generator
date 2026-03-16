@@ -7,7 +7,7 @@ A web-based input file generator for the **dHybridR** hybrid particle-in-cell pl
 - **Full schema coverage** — all 17 namelists and 101+ parameters from the dHybridR Fortran source
 - **1D / 2D / 3D dimension switching** — fields automatically adapt (vector lengths, boundary pairs, grid axes)
 - **Live preview** — the generated Fortran namelist text updates in real time as you edit
-- **4 built-in presets** — 2D Periodic Box, 3D Periodic Box, 2D Shock (Mur BC), 2D Shock (Classic BC)
+- **3 built-in presets** — 2D Periodic Box, 3D Periodic Box, 2D Shock
 - **File load & parse** — drag-and-drop or browse to load an existing dHybridR input file; the parser populates every field
 - **Multi-species support** — add up to 10 particle species, each with their own boundary conditions, diagnostics, injectors, and tracking
 - **Validation** — integer enforcement on integer fields, `planepos` must fall within `boxsize`, boundary type consistency checks
