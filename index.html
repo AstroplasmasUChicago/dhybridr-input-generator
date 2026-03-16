@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>dHybridR Input Generator</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -48,6 +50,7 @@
     <main id="main">
       <div id="sections"></div>
     </main>
+    <div class="resize-handle" id="resize-handle"></div>
     <aside id="preview">
       <div class="preview-header">
         <h3>Preview</h3>
@@ -61,5 +64,41 @@
 <script src="generator.js"></script>
 <script src="parser.js"></script>
 <script src="app.js"></script>
+<script>
+// Draggable resize handle for preview panel
+(function() {
+  const handle = document.getElementById('resize-handle');
+  const layout = document.querySelector('.layout');
+  let dragging = false;
+
+  handle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    dragging = true;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const previewWidth = window.innerWidth - e.clientX;
+    const sidebarWidth = 200;
+    const minMainWidth = 400;
+    const handleWidth = 5;
+    const minWidth = 200;
+    const maxWidth = window.innerWidth - sidebarWidth - minMainWidth - handleWidth;
+    const clamped = Math.max(minWidth, Math.min(maxWidth, previewWidth));
+    layout.style.setProperty('--preview-width', clamped + 'px');
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+})();
+</script>
 </body>
 </html>

@@ -44,8 +44,18 @@ header h1 { font-size: 18px; font-weight: 600; }
 
 /* Layout */
 .layout {
-  display: grid; grid-template-columns: 200px 1fr 380px;
+  display: grid; grid-template-columns: 200px 1fr 5px var(--preview-width, 50vw);
   height: calc(100vh - 53px);
+}
+
+/* Resize handle */
+.resize-handle {
+  width: 5px; cursor: col-resize; background: var(--border);
+  transition: background 0.15s;
+  flex-shrink: 0; z-index: 10;
+}
+.resize-handle:hover, .resize-handle.dragging {
+  background: var(--accent);
 }
 
 /* Sidebar */
@@ -190,6 +200,38 @@ header h1 { font-size: 18px; font-weight: 600; }
   margin: 0;
 }
 
+/* dt formula annotation */
+.dt-formula {
+  margin-bottom: 6px;
+}
+.dt-formula-content {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.dt-formula-label {
+  font-size: 11px; color: var(--muted); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.03em;
+}
+.dt-formula-inline {
+  display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.dt-formula-tex {
+  font-size: 13px; color: var(--muted); line-height: 1.6;
+  display: inline-flex; align-items: center;
+}
+.dt-formula-eq {
+  font-size: 13px; color: var(--muted);
+  display: inline-flex; align-items: center;
+}
+.dt-rec-pill {
+  background: var(--surface); color: var(--accent); border: 1px solid var(--border);
+  border-radius: 12px; padding: 2px 10px; font-size: 12px; cursor: pointer;
+  font-family: 'SF Mono', Menlo, monospace; transition: all 0.15s;
+  white-space: nowrap; line-height: 1.4;
+}
+.dt-rec-pill:hover {
+  border-color: var(--accent); background: var(--accent-dim);
+}
+
 /* Preview */
 #preview {
   background: var(--surface); border-left: 1px solid var(--border);
@@ -332,6 +374,7 @@ input.int-field.rejected {
 @media (max-width: 1100px) {
   .layout { grid-template-columns: 180px 1fr; }
   #preview { display: none; }
+  .resize-handle { display: none; }
 }
 @media (max-width: 768px) {
   header {

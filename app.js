@@ -14,6 +14,13 @@
     setActiveSection('node_conf');
     updatePreview();
 
+    // Render dt formula once KaTeX is ready
+    if (typeof katex !== 'undefined') {
+      updateDtRecommendation();
+    } else {
+      document.querySelector('script[src*="katex"]')?.addEventListener('load', () => updateDtRecommendation());
+    }
+
     document.getElementById('dim-select').addEventListener('change', onDimChange);
 
     // Mobile menu
@@ -181,6 +188,9 @@
         validateDiagSpecies(key, spIdx);
       }
     }
+    if (key === 'time') {
+      updateDtRecommendation();
+    }
   }
 
   // ---- Build sections ----
@@ -277,12 +287,17 @@
       inputHTML = `<input type="text" ${dataAttr}${extra} placeholder="${field.default ?? ''}">`;
     }
 
+    let extraHTML = '';
+    if (skey === 'time' && field.key === 'dt') {
+      extraHTML = `<div class="dt-formula" id="dt-formula"></div>`;
+    }
+
     return `<div class="field-row ${dimClass}">
       <div class="field-label">
         <span class="name">${field.label}</span>
         <span class="hint">${field.hint || ''}</span>
       </div>
-      <div class="field-input">${inputHTML}</div>
+      <div class="field-input">${extraHTML}${inputHTML}</div>
     </div>`;
   }
 
@@ -335,7 +350,8 @@
       html += `<div class="array-col ${dimVis}">`;
       if (labels[i]) html += `<span class="label">${labels[i]}</span>`;
       const extraAttr = field.type === 'int' ? ' inputmode="numeric" class="int-field"' : '';
-      html += `<input type="text" ${dataAttr} data-index="${i}"${extraAttr} style="width:80px">`;
+      const defVal = Array.isArray(field.default) ? (field.default[i] ?? '') : '';
+      html += `<input type="text" ${dataAttr} data-index="${i}"${extraAttr} style="width:80px" placeholder="${defVal}">`;
       html += `</div>`;
     }
     html += '</div>';
@@ -612,6 +628,12 @@
             validateDiagSpecies('diag_species', diagSpIdx);
           }
         }
+
+        // Cross-section: if boxsize, ncells, or c changed, update dt recommendation
+        if ((elSection === 'grid_space' && (elKey === 'boxsize' || elKey === 'ncells')) ||
+            (elSection === 'time' && elKey === 'c')) {
+          updateDtRecommendation();
+        }
       };
 
       el.addEventListener('input', onChange);
@@ -723,6 +745,7 @@
     loadStateToUI();
     setActiveSection(activeSection);
     updatePreview();
+    updateDtRecommendation();
   }
 
   function adjustDimArrays(sec, data) {
@@ -747,6 +770,72 @@
         data[field.key] = filtered.join(',');
       }
     }
+  }
+
+  // ---- dt recommendation ----
+  function updateDtRecommendation() {
+    const container = document.getElementById('dt-formula');
+    if (!container) return;
+
+    const safetyFactor = 0.5;
+    const ncells = state.grid_space?.ncells || [];
+    const boxsize = state.grid_space?.boxsize || [];
+    const c = parseFloat(state.time?.c) || 200;
+
+    // Compute dx_i = boxsize[i] / ncells[i] for each active dimension
+    let sumInvDx2 = 0;
+    const dxVals = [];
+    const dimNames = ['x', 'y', 'z'];
+    for (let i = 0; i < currentDim; i++) {
+      const L = parseFloat(boxsize[i]) || 1;
+      const N = parseInt(ncells[i]) || 1;
+      const dx = L / N;
+      dxVals.push(dx);
+      sumInvDx2 += 1 / (dx * dx);
+    }
+
+    const dtRec = safetyFactor / (c * Math.sqrt(sumInvDx2));
+
+    // Format nicely
+    const dtStr = dtRec.toPrecision(4);
+
+    // Build the formula + pill inline
+    let html = `<div class="dt-formula-content">`;
+    html += `<span class="dt-formula-label">Rule of thumb (CFL):</span>`;
+    html += `<span class="dt-formula-inline"><span class="dt-formula-tex" id="dt-formula-tex"></span>`;
+    html += ` <span class="dt-formula-eq">=</span> `;
+    html += `<button class="dt-rec-pill" title="Click to apply">${dtStr}</button>`;
+    html += `</span>`;
+    html += `</div>`;
+    container.innerHTML = html;
+
+    // Build dimension-appropriate LaTeX
+    const texEl = document.getElementById('dt-formula-tex');
+    let invTerms;
+    if (currentDim === 1) {
+      invTerms = String.raw`\frac{1}{\Delta x^2}`;
+    } else if (currentDim === 2) {
+      invTerms = String.raw`\frac{1}{\Delta x^2} + \frac{1}{\Delta y^2}`;
+    } else {
+      invTerms = String.raw`\frac{1}{\Delta x^2} + \frac{1}{\Delta y^2} + \frac{1}{\Delta z^2}`;
+    }
+    const texFormula = String.raw`\Delta t \leq \frac{C_{\max}}{c\,\sqrt{${invTerms}}} \quad (C_{\max} = ${safetyFactor})`;
+
+    if (texEl && typeof katex !== 'undefined') {
+      katex.render(texFormula, texEl, { throwOnError: false, displayMode: false });
+    } else if (texEl) {
+      const terms = dxVals.map((_, i) => `1/d${dimNames[i]}²`).join(' + ');
+      texEl.textContent = `dt ≤ Cmax / (c · √(${terms}))  (Cmax = ${safetyFactor})`;
+    }
+
+    // Click pill to apply value
+    container.querySelector('.dt-rec-pill')?.addEventListener('click', () => {
+      const dtInput = document.querySelector('[data-section="time"][data-key="dt"]');
+      if (dtInput) {
+        dtInput.value = dtStr;
+        dtInput.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
   }
 
   // ---- Diag Species validation, recommendations & size estimates ----
