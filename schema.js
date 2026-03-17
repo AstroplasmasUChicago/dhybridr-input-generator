@@ -1,5 +1,5 @@
 // dHybridR input file schema — every parameter from every Read* subroutine
-// dim: 0=scalar, 'DIM'=DIM-dependent, 'DIM2'=DIM*2, 'VDIM'=always 3, N=fixed
+// dim: 0=scalar, 'DIM'=DIM-dependent, 'DIM2'=DIM*2, 'BDIM'=2*(DIM-1), 'VDIM'=always 3, N=fixed
 // type: 'int','real','bool','str','strarr'
 // perSpecies sections repeat num_species times
 
@@ -260,7 +260,7 @@ const SCHEMA = {
       { key: 'plane', label: 'plane', type: 'str', dim: 0, default: 'yz',
         options: ['xy','xz','yz'], hint: 'Injection plane' },
       { key: 'planepos', label: 'planepos', type: 'real', dim: 0, default: 0, hint: 'Position of injection plane' },
-      { key: 'boundary', label: 'boundary', type: 'real', dim: 4, default: [0,0,0,0], hint: 'Injection boundary',
+      { key: 'boundary', label: 'boundary', type: 'real', dim: 'BDIM', default: [0,0,0,0], hint: 'Injection boundary',
         dimLabels: ['st1','st2','end1','end2'] },
       { key: 'num_par', label: 'num_par', type: 'int', dim: 'DIM',
         default: [2,2,2], hint: 'Particles per cell', dimLabels: ['x','y','z'] },
@@ -415,7 +415,7 @@ const PRESETS = [
       algorithm: { filternpass: 1, ifsmoothextfields: true },
       species: [{ vdrift: [-220,0,0], vth: 1, num_par: [2,2] }],
       boundary_conditions: [{ bdtype: ['reflect','open','per','per'], vth: 0 }],
-      plasma_injector: [[{ plane: 'yz', planepos: 64, boundary: [0,0,64,64], vdrift: [-30,0,0], vth: 1, num_par: [2,2] }]],
+      plasma_injector: [[{ plane: 'yz', planepos: 64, boundary: [0,64], vdrift: [-30,0,0], vth: 1, num_par: [2,2] }]],
       restart: { restart_step: -1, restart_time: 7200, restart_time_step: 100 },
     }
   },

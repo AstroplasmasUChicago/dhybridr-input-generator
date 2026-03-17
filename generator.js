@@ -154,6 +154,7 @@ function getArraySize(dimSpec, dim) {
   if (dimSpec === 0) return 0;
   if (dimSpec === 'DIM') return dim;
   if (dimSpec === 'DIM2') return dim * 2;
+  if (dimSpec === 'BDIM') return (dim - 1) * 2;
   if (dimSpec === 'VDIM') return 3;
   if (dimSpec === 'VDIM_STR') return 3;
   if (typeof dimSpec === 'number') return dimSpec;

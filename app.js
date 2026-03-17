@@ -392,6 +392,7 @@
   function getMaxArraySize(dimSpec) {
     if (dimSpec === 'DIM') return 3;
     if (dimSpec === 'DIM2') return 6;
+    if (dimSpec === 'BDIM') return 4;
     if (dimSpec === 'VDIM' || dimSpec === 'VDIM_STR') return 3;
     if (typeof dimSpec === 'number') return dimSpec;
     return 0;
@@ -409,6 +410,9 @@
     }
     if (field.dim === 'DIM2') {
       return idx >= currentDim * 2 ? 'dim-hidden' : '';
+    }
+    if (field.dim === 'BDIM') {
+      return idx >= (currentDim - 1) * 2 ? 'dim-hidden' : '';
     }
     return '';
   }
@@ -524,6 +528,7 @@
       const onChange = () => {
         const field = sec.fields.find(f => f.key === elKey);
         if (!field && elKey !== '_enabled') return;
+        const oldBoxsize = (state.grid_space?.boxsize || []).map(Number);
         const spIdx = el.dataset.species !== undefined ? parseInt(el.dataset.species) : undefined;
         const arrIdx = el.dataset.index !== undefined ? parseInt(el.dataset.index) : undefined;
 
@@ -542,10 +547,29 @@
         if (elKey === '_enabled') {
           if (sec.multiPerSpecies) {
             // Set _enabled on ALL injectors for ALL species
+            const boxsize = (state.grid_space?.boxsize || []).map(Number);
             for (const spArr of state[elSection]) {
               if (Array.isArray(spArr)) {
-                for (const inj of spArr) inj._enabled = el.checked;
+                for (const inj of spArr) {
+                  inj._enabled = el.checked;
+                  if (el.checked && elSection === 'plasma_injector') {
+                    // Default: yz plane at right x edge, boundary spans full box
+                    inj.plane = inj.plane || 'yz';
+                    inj.planepos = boxsize[0] || 0;
+                    const nInPlane = currentDim - 1;
+                    const bd = new Array(nInPlane * 2).fill(0);
+                    // ends are at indices [nInPlane .. 2*nInPlane-1]
+                    if (nInPlane >= 1) bd[nInPlane] = boxsize[1] || 0;     // end_y
+                    if (nInPlane >= 2) bd[nInPlane + 1] = boxsize[2] || 0; // end_z
+                    inj.boundary = bd;
+                  }
+                }
               }
+            }
+            // Refresh UI if viewing injector section
+            if (activeSection === 'plasma_injector') {
+              const spIdx2 = activeSpeciesIdx['plasma_injector'] || 0;
+              rebuildInjectorContent('plasma_injector', spIdx2);
             }
           } else if (sec.perSpecies && spIdx !== undefined) {
             target._enabled = el.checked;
@@ -635,6 +659,11 @@
             (elSection === 'time' && elKey === 'c')) {
           updateDtRecommendation();
           autoUpdateDt();
+        }
+
+        // Cross-section: if boxsize changed, move injectors that sit at the old edge
+        if (elSection === 'grid_space' && elKey === 'boxsize') {
+          syncInjectorsToBoxsize(oldBoxsize);
         }
       };
 
@@ -771,6 +800,73 @@
         });
         data[field.key] = filtered.join(',');
       }
+    }
+  }
+
+  // ---- Sync injector planepos/boundary when boxsize changes ----
+  function syncInjectorsToBoxsize(oldBoxsize) {
+    const newBoxsize = (state.grid_space?.boxsize || []).map(Number);
+    const injectors = state.plasma_injector;
+    if (!injectors || !Array.isArray(injectors)) return;
+
+    const eps = 1e-6;
+    const planeAxisIdx = { yz: 0, xz: 1, xy: 2 };
+    // For boundary: in-plane axes per plane type
+    const inPlaneAxes = {
+      yz: [1, 2],  // y, z
+      xz: [0, 2],  // x, z
+      xy: [0, 1],  // x, y
+    };
+
+    let changed = false;
+    for (const spArr of injectors) {
+      if (!Array.isArray(spArr)) continue;
+      for (const inj of spArr) {
+        if (!inj) continue;
+        const plane = (inj.plane || 'yz').toLowerCase();
+
+        // Sync planepos if it was at the old boxsize edge
+        const axIdx = planeAxisIdx[plane];
+        if (axIdx !== undefined && axIdx < oldBoxsize.length) {
+          const oldMax = oldBoxsize[axIdx];
+          const pp = Number(inj.planepos) || 0;
+          if (Math.abs(pp - oldMax) < eps * Math.max(1, Math.abs(oldMax))) {
+            inj.planepos = newBoxsize[axIdx] || 0;
+            changed = true;
+          }
+        }
+
+        // Sync boundary ends if they were at the old boxsize edge
+        const axes = (inPlaneAxes[plane] || []).filter(ai => ai < currentDim);
+        const bd = inj.boundary;
+        if (Array.isArray(bd)) {
+          const nInPlane = axes.length;
+          for (let i = 0; i < nInPlane; i++) {
+            const ai = axes[i];
+            if (ai >= oldBoxsize.length) continue;
+            const oldMax = oldBoxsize[ai];
+            const newMax = newBoxsize[ai] || 0;
+            // Check end values (at indices nInPlane + i)
+            const endIdx = nInPlane + i;
+            if (endIdx < bd.length) {
+              const endVal = Number(bd[endIdx]) || 0;
+              if (Math.abs(endVal - oldMax) < eps * Math.max(1, Math.abs(oldMax))) {
+                bd[endIdx] = newMax;
+                changed = true;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (changed) {
+      // Refresh injector UI if currently viewing it
+      if (activeSection === 'plasma_injector') {
+        const spIdx = activeSpeciesIdx['plasma_injector'] || 0;
+        rebuildInjectorContent('plasma_injector', spIdx);
+      }
+      updatePreview();
     }
   }
 
