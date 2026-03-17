@@ -15,6 +15,7 @@
     updatePreview();
 
     // Render dt formula once KaTeX is ready
+    autoUpdateDt();
     if (typeof katex !== 'undefined') {
       updateDtRecommendation();
     } else {
@@ -629,10 +630,11 @@
           }
         }
 
-        // Cross-section: if boxsize, ncells, or c changed, update dt recommendation
+        // Cross-section: if boxsize, ncells, or c changed, update dt recommendation and auto-set dt
         if ((elSection === 'grid_space' && (elKey === 'boxsize' || elKey === 'ncells')) ||
             (elSection === 'time' && elKey === 'c')) {
           updateDtRecommendation();
+          autoUpdateDt();
         }
       };
 
@@ -772,6 +774,32 @@
     }
   }
 
+  // ---- Auto-update dt using CFL: dt = 0.5 / (c * sqrt(sum(1/dx_i^2))) ----
+  function autoUpdateDt() {
+    const ncells = state.grid_space?.ncells || [];
+    const boxsize = state.grid_space?.boxsize || [];
+    const c = parseFloat(state.time?.c) || 100;
+
+    let sumInvDx2 = 0;
+    for (let i = 0; i < currentDim; i++) {
+      const L = parseFloat(boxsize[i]) || 1;
+      const N = parseInt(ncells[i]) || 1;
+      const dx = L / N;
+      sumInvDx2 += 1 / (dx * dx);
+    }
+    if (sumInvDx2 <= 0) return;
+
+    const dt = 0.5 / (c * Math.sqrt(sumInvDx2));
+    const dtStr = dt.toPrecision(4);
+    state.time.dt = parseFloat(dtStr);
+
+    const dtInput = document.querySelector('[data-section="time"][data-key="dt"]');
+    if (dtInput) {
+      dtInput.value = dtStr;
+    }
+    updatePreview();
+  }
+
   // ---- dt recommendation ----
   function updateDtRecommendation() {
     const container = document.getElementById('dt-formula');
@@ -799,12 +827,11 @@
     // Format nicely
     const dtStr = dtRec.toPrecision(4);
 
-    // Build the formula + pill inline
+    // Build the formula display
     let html = `<div class="dt-formula-content">`;
-    html += `<span class="dt-formula-label">Rule of thumb (CFL):</span>`;
+    html += `<span class="dt-formula-label">CFL limit:</span>`;
     html += `<span class="dt-formula-inline"><span class="dt-formula-tex" id="dt-formula-tex"></span>`;
-    html += ` <span class="dt-formula-eq">=</span> `;
-    html += `<button class="dt-rec-pill" title="Click to apply">${dtStr}</button>`;
+    html += ` <span class="dt-formula-eq">= ${dtStr}</span>`;
     html += `</span>`;
     html += `</div>`;
     container.innerHTML = html;
@@ -828,14 +855,6 @@
       texEl.textContent = `dt ≤ Cmax / (c · √(${terms}))  (Cmax = ${safetyFactor})`;
     }
 
-    // Click pill to apply value
-    container.querySelector('.dt-rec-pill')?.addEventListener('click', () => {
-      const dtInput = document.querySelector('[data-section="time"][data-key="dt"]');
-      if (dtInput) {
-        dtInput.value = dtStr;
-        dtInput.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-    });
   }
 
   // ---- Diag Species validation, recommendations & size estimates ----

@@ -222,15 +222,6 @@ header h1 { font-size: 18px; font-weight: 600; }
   font-size: 13px; color: var(--muted);
   display: inline-flex; align-items: center;
 }
-.dt-rec-pill {
-  background: var(--surface); color: var(--accent); border: 1px solid var(--border);
-  border-radius: 12px; padding: 2px 10px; font-size: 12px; cursor: pointer;
-  font-family: 'SF Mono', Menlo, monospace; transition: all 0.15s;
-  white-space: nowrap; line-height: 1.4;
-}
-.dt-rec-pill:hover {
-  border-color: var(--accent); background: var(--accent-dim);
-}
 
 /* Preview */
 #preview {
