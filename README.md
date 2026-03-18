@@ -7,7 +7,7 @@ A web-based input file generator for the **dHybridR** hybrid particle-in-cell pl
 - **Full schema coverage** — all 17 namelists and 101+ parameters from the dHybridR Fortran source
 - **1D / 2D / 3D dimension switching** — fields automatically adapt (vector lengths, boundary pairs, grid axes)
 - **Live preview** — the generated Fortran namelist text updates in real time as you edit
-- **3 built-in presets** — 2D Periodic Box, 3D Periodic Box, 2D Shock
+- **4 built-in presets** — 2D Periodic Box, 3D Periodic Box, 2D Shock, 3D Shock
 - **File load & parse** — drag-and-drop or browse to load an existing dHybridR input file; the parser populates every field
 - **Multi-species support** — add up to 10 particle species, each with their own boundary conditions, diagnostics, injectors, and tracking
 - **Validation** — integer enforcement on integer fields, `planepos` must fall within `boxsize`, boundary type consistency checks
@@ -17,22 +17,35 @@ A web-based input file generator for the **dHybridR** hybrid particle-in-cell pl
 
 ## Quick Start
 
-This is a **pure static site** — just HTML, CSS, and JavaScript.
+This is a **pure static site** — just HTML, CSS, and JavaScript. No build step required.
 
-### Option 1: Local file server
+### Local development (with Nix + direnv)
 
 ```bash
-cd web-tool
-python3 -m http.server 8000
+# direnv will activate the Nix shell automatically
+cd dhybridr-input-generator
+direnv allow   # one-time setup
+
+# Start the dev server (no-cache headers for hot reload)
+python3 server.py
 ```
 
-Then open [http://localhost:8000](http://localhost:8000) in your browser.
+Then open [http://localhost:8000](http://localhost:8000).
 
-### Option 2: Open directly
+### Local development (without Nix)
+
+```bash
+cd dhybridr-input-generator
+python3 server.py
+```
+
+`server.py` is a thin wrapper around Python's `http.server` that sets no-cache headers so you always see your latest changes. Then open [http://localhost:8000](http://localhost:8000).
+
+### Open directly
 
 Most browsers will work if you simply open `index.html` as a local file, though the file-load feature may require a server due to browser security policies.
 
-### Option 3: Any static web host
+### Static hosting
 
 Upload the files to any static hosting service (GitHub Pages, Nginx, Apache, Caddy, etc.).
 
@@ -62,7 +75,10 @@ On mobile, the sidebar becomes a slide-out drawer triggered by the ☰ hamburger
 |------------------|-------------|
 | `index.html`     | Main HTML page — minimal markup; the UI is built dynamically by `app.js` |
 | `style.css`      | All styles — dark theme, responsive breakpoints, hamburger menu, modals |
-| `schema.js`      | Complete schema of all 17 namelists with field definitions, types, defaults, dimension rules, and 4 presets |
+| `schema.js`      | Complete schema of all 17 namelists with field definitions, types, defaults, dimension rules, and presets |
+| `server.py`      | Python dev server with no-cache headers |
+| `shell.nix`      | Nix shell environment (provides python3) |
+| `.envrc`          | direnv config to activate Nix shell automatically |
 | `generator.js`   | Converts the in-memory form state into a valid Fortran namelist input file string |
 | `parser.js`      | Parses an existing dHybridR input file back into the form state object |
 | `app.js`         | Application logic — state management, DOM rendering, event handling, validation, presets, file I/O |
