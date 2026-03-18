@@ -385,6 +385,7 @@ const PRESETS = [
       ext_emf: { Bx: '0.6', By: '0.33', Bz: '-.25' },
       species: [{ num_par: [2,2], vth: 1 }],
       boundary_conditions: [{ bdtype: ['per','per','per','per'] }],
+      diag_species: [{ xres: [20,20] }],
       restart: { restart_step: -1, restart_time: 7200, restart_time_step: 100 },
     }
   },
@@ -399,6 +400,7 @@ const PRESETS = [
       ext_emf: { Bx: '0.6', By: '0.33', Bz: '-.25' },
       species: [{ num_par: [2,2,2], vth: 1 }],
       boundary_conditions: [{ bdtype: ['per','per','per','per','per','per'] }],
+      diag_species: [{ xres: [20,20,20] }],
       restart: { restart_step: -1, restart_time: 7200, restart_time_step: 100 },
     }
   },
@@ -416,6 +418,7 @@ const PRESETS = [
       species: [{ vdrift: [-220,0,0], vth: 1, num_par: [2,2] }],
       boundary_conditions: [{ bdtype: ['reflect','open','per','per'], vth: 0 }],
       plasma_injector: [[{ plane: 'yz', planepos: 64, boundary: [0,64], vdrift: [-30,0,0], vth: 1, num_par: [2,2] }]],
+      diag_species: [{ xres: [128,128] }],
       restart: { restart_step: -1, restart_time: 7200, restart_time_step: 100 },
     }
   },
@@ -433,6 +436,7 @@ const PRESETS = [
       species: [{ vdrift: [-220,0,0], vth: 1, num_par: [2,2,2] }],
       boundary_conditions: [{ bdtype: ['reflect','open','per','per','per','per'], vth: 0 }],
       plasma_injector: [[{ plane: 'yz', planepos: 32, boundary: [0,0,32,32], vdrift: [-30,0,0], vth: 1, num_par: [2,2,2] }]],
+      diag_species: [{ xres: [64,64,64] }],
       restart: { restart_step: -1, restart_time: 7200, restart_time_step: 100 },
     }
   },
