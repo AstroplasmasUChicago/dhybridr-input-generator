@@ -658,6 +658,11 @@
 
         updatePreview();
 
+        // Cross-section: if ncells changed, cap xres to ncells for all species
+        if (elSection === 'grid_space' && elKey === 'ncells') {
+          autoCapXres();
+        }
+
         // Cross-section: if ncells, niter, or ndump changed, update diag_species estimates
         if ((elSection === 'grid_space' && elKey === 'ncells') ||
             (elSection === 'time' && elKey === 'niter') ||
@@ -891,6 +896,34 @@
       if (activeSection === 'plasma_injector') {
         const spIdx = activeSpeciesIdx['plasma_injector'] || 0;
         rebuildInjectorContent('plasma_injector', spIdx);
+      }
+      updatePreview();
+    }
+  }
+
+  // ---- Auto-cap xres to ncells when ncells changes ----
+  function autoCapXres() {
+    const ncells = state.grid_space?.ncells || [];
+    const diagArr = state.diag_species;
+    if (!Array.isArray(diagArr)) return;
+
+    let changed = false;
+    for (const diag of diagArr) {
+      if (!diag || !Array.isArray(diag.xres)) continue;
+      for (let i = 0; i < currentDim; i++) {
+        const nc = parseInt(ncells[i]) || 0;
+        const xr = parseInt(diag.xres[i]) || 0;
+        if (nc > 0 && xr > nc) {
+          diag.xres[i] = nc;
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      // Refresh UI if viewing diag_species
+      if (activeSection === 'diag_species') {
+        const spIdx = activeSpeciesIdx['diag_species'] || 0;
+        rebuildSpeciesContent('diag_species', spIdx);
       }
       updatePreview();
     }
