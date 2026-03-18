@@ -192,6 +192,7 @@
     if (key === 'time') {
       updateDtRecommendation();
     }
+    validateSection(key);
   }
 
   // ---- Build sections ----
@@ -223,11 +224,11 @@
       html += `</div></div></div>`;
     }
 
+    html += `<div class="validation-msg" data-section="${skey}"></div>`;
     if (sec.perSpecies) {
       html += `<div class="species-tabs" data-section="${skey}"></div>`;
       if (sec.multiPerSpecies) {
         html += `<div class="injector-tabs" data-section="${skey}"></div>`;
-        html += `<div class="validation-msg" data-section="${skey}"></div>`;
       }
       html += `<div class="species-content" data-section="${skey}">`;
       html += buildFieldsHTML(skey, sec, 0);
@@ -665,6 +666,18 @@
         if (elSection === 'grid_space' && elKey === 'boxsize') {
           syncInjectorsToBoxsize(oldBoxsize);
         }
+
+        // Section validations
+        if (elSection === 'grid_space') validateSection('grid_space');
+        if (elSection === 'time') {
+          validateSection('time');
+          validateSection('global_output'); // ndump vs niter
+        }
+        if (elSection === 'global_output') {
+          validateSection('global_output');
+          validateSection('raw_diag'); // raw_ndump vs ndump
+        }
+        if (elSection === 'raw_diag') validateSection('raw_diag');
       };
 
       el.addEventListener('input', onChange);
@@ -870,22 +883,23 @@
     }
   }
 
-  // ---- Auto-update dt using CFL: dt = 0.5 / (c * sqrt(sum(1/dx_i^2))) ----
+  // ---- Auto-update dt using CFL: dt = 0.5 * min(dx_i) / c ----
   function autoUpdateDt() {
     const ncells = state.grid_space?.ncells || [];
     const boxsize = state.grid_space?.boxsize || [];
     const c = parseFloat(state.time?.c) || 100;
+    if (c <= 0) return;
 
-    let sumInvDx2 = 0;
+    let minDx = Infinity;
     for (let i = 0; i < currentDim; i++) {
       const L = parseFloat(boxsize[i]) || 1;
       const N = parseInt(ncells[i]) || 1;
       const dx = L / N;
-      sumInvDx2 += 1 / (dx * dx);
+      if (dx < minDx) minDx = dx;
     }
-    if (sumInvDx2 <= 0) return;
+    if (!isFinite(minDx) || minDx <= 0) return;
 
-    const dt = 0.5 / (c * Math.sqrt(sumInvDx2));
+    const dt = 0.5 * minDx / c;
     const dtStr = dt.toPrecision(4);
     state.time.dt = parseFloat(dtStr);
 
@@ -904,23 +918,20 @@
     const safetyFactor = 0.5;
     const ncells = state.grid_space?.ncells || [];
     const boxsize = state.grid_space?.boxsize || [];
-    const c = parseFloat(state.time?.c) || 200;
+    const c = parseFloat(state.time?.c) || 100;
+    if (c <= 0) { container.innerHTML = ''; return; }
 
-    // Compute dx_i = boxsize[i] / ncells[i] for each active dimension
-    let sumInvDx2 = 0;
-    const dxVals = [];
     const dimNames = ['x', 'y', 'z'];
+    let minDx = Infinity;
     for (let i = 0; i < currentDim; i++) {
       const L = parseFloat(boxsize[i]) || 1;
       const N = parseInt(ncells[i]) || 1;
       const dx = L / N;
-      dxVals.push(dx);
-      sumInvDx2 += 1 / (dx * dx);
+      if (dx < minDx) minDx = dx;
     }
+    if (!isFinite(minDx) || minDx <= 0) { container.innerHTML = ''; return; }
 
-    const dtRec = safetyFactor / (c * Math.sqrt(sumInvDx2));
-
-    // Format nicely
+    const dtRec = safetyFactor * minDx / c;
     const dtStr = dtRec.toPrecision(4);
 
     // Build the formula display
@@ -932,23 +943,15 @@
     html += `</div>`;
     container.innerHTML = html;
 
-    // Build dimension-appropriate LaTeX
+    // Build LaTeX
     const texEl = document.getElementById('dt-formula-tex');
-    let invTerms;
-    if (currentDim === 1) {
-      invTerms = String.raw`\frac{1}{\Delta x^2}`;
-    } else if (currentDim === 2) {
-      invTerms = String.raw`\frac{1}{\Delta x^2} + \frac{1}{\Delta y^2}`;
-    } else {
-      invTerms = String.raw`\frac{1}{\Delta x^2} + \frac{1}{\Delta y^2} + \frac{1}{\Delta z^2}`;
-    }
-    const texFormula = String.raw`\Delta t \leq \frac{C_{\max}}{c\,\sqrt{${invTerms}}} \quad (C_{\max} = ${safetyFactor})`;
+    const dxTerms = dimNames.slice(0, currentDim).map(d => `\\Delta ${d}`).join(',\\,');
+    const texFormula = String.raw`\Delta t \leq \frac{C_{\max} \cdot \min(${dxTerms})}{c} \quad (C_{\max} = ${safetyFactor})`;
 
     if (texEl && typeof katex !== 'undefined') {
       katex.render(texFormula, texEl, { throwOnError: false, displayMode: false });
     } else if (texEl) {
-      const terms = dxVals.map((_, i) => `1/d${dimNames[i]}²`).join(' + ');
-      texEl.textContent = `dt ≤ Cmax / (c · √(${terms}))  (Cmax = ${safetyFactor})`;
+      texEl.textContent = `dt ≤ Cmax · min(${dimNames.slice(0, currentDim).map(d => 'd'+d).join(', ')}) / c  (Cmax = ${safetyFactor})`;
     }
 
   }
@@ -1173,6 +1176,51 @@
     return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
   }
 
+  // ---- Section validation (grid_space, time, global_output) ----
+  function validateSection(skey) {
+    const msgEl = document.querySelector(`.validation-msg[data-section="${skey}"]`);
+    if (!msgEl) return;
+    const warnings = [];
+
+    if (skey === 'grid_space') {
+      const ncells = state.grid_space?.ncells || [];
+      const boxsize = state.grid_space?.boxsize || [];
+      const dimLabels = ['x', 'y', 'z'];
+      for (let i = 0; i < currentDim; i++) {
+        const nc = Number(ncells[i]) || 0;
+        const bs = Number(boxsize[i]) || 0;
+        if (nc <= 0) warnings.push(`ncells[${dimLabels[i]}] = ${nc} — must be > 0`);
+        if (bs <= 0) warnings.push(`boxsize[${dimLabels[i]}] = ${bs} — must be > 0`);
+      }
+    }
+
+    if (skey === 'time') {
+      const c = Number(state.time?.c) || 0;
+      const niter = Number(state.time?.niter) || 0;
+      const stiter = Number(state.time?.stiter) || 0;
+      if (c <= 0) warnings.push(`c = ${c} — speed of light must be > 0`);
+      if (niter <= 0) warnings.push(`niter = ${niter} — must be > 0`);
+      if (stiter >= niter && stiter > 0) warnings.push(`stiter (${stiter}) ≥ niter (${niter}) — simulation will never start`);
+    }
+
+    if (skey === 'global_output') {
+      const niter = Number(state.time?.niter) || 0;
+      const ndump = Number(state.global_output?.ndump) || 0;
+      if (ndump > niter && niter > 0) warnings.push(`ndump (${ndump}) > niter (${niter}) — no diagnostics will be written`);
+    }
+
+    if (skey === 'raw_diag') {
+      const ndump = Number(state.global_output?.ndump) || 0;
+      const spIdx = activeSpeciesIdx['raw_diag'] || 0;
+      const rawNdump = Number(state.raw_diag?.[spIdx]?.raw_ndump) || 0;
+      if (ndump > 0 && rawNdump > 0 && rawNdump % ndump !== 0) {
+        warnings.push(`raw_ndump (${rawNdump}) must be a multiple of ndump (${ndump})`);
+      }
+    }
+
+    msgEl.innerHTML = warnings.map(w => `<div class="validation-warn">\u26a0 ${w}</div>`).join('');
+  }
+
   // ---- Injector validation ----
   function validateInjector(skey, spIdx) {
     const msgEl = document.querySelector(`.validation-msg[data-section="${skey}"]`);
@@ -1268,6 +1316,7 @@
       if (st < 0) warnings.push(`boundary ${ax.label}-start (${st}) is below 0 — will be clipped`);
       if (en > ax.max) warnings.push(`boundary ${ax.label}-end (${en}) exceeds boxsize(${ax.label})=${ax.max} — will be clipped`);
       if (st > en && en > 0) warnings.push(`boundary ${ax.label}-start (${st}) > ${ax.label}-end (${en})`);
+      if (st === en) warnings.push(`boundary ${ax.label}-start = ${ax.label}-end (${st}) — zero-size injection region`);
     }
 
     if (warnings.length > 0) {
