@@ -194,6 +194,10 @@
     }
     if (key === 'ext_emf') {
       updateBMagnitude();
+      updateEMagnitude();
+    }
+    if (key === 'species') {
+      debouncedRenderNspPlot();
     }
     validateSection(key);
   }
@@ -218,6 +222,8 @@
           cmapSel.addEventListener('change', () => {
             selectedColormap = cmapSel.value;
             renderBFieldPlot();
+            renderEFieldPlot();
+            debouncedRenderNspPlot();
           });
         }
         const compSel = div.querySelector('#b-field-component');
@@ -225,6 +231,13 @@
           compSel.addEventListener('change', () => {
             selectedBComponent = compSel.value;
             renderBFieldPlot();
+          });
+        }
+        const eCompSel = div.querySelector('#e-field-component');
+        if (eCompSel) {
+          eCompSel.addEventListener('change', () => {
+            selectedEComponent = eCompSel.value;
+            renderEFieldPlot();
           });
         }
       }
@@ -274,6 +287,24 @@
         html += buildFieldRow(skey, field, speciesIdx);
       }
       html += `</div>`;
+      // Insert |E| magnitude panel and heatmap after the Electric Field group
+      if (skey === 'ext_emf' && group.title === 'Electric Field') {
+        html += `<div id="e-magnitude"></div>`;
+        html += `<div id="e-field-plot">`;
+        html += `<div id="e-field-controls">`;
+        html += `<label>Field: <select id="e-field-component">`;
+        html += `<option value="mag" selected>|E|</option>`;
+        html += `<option value="Ex">Ex</option>`;
+        html += `<option value="Ey">Ey</option>`;
+        html += `<option value="Ez">Ez</option>`;
+        html += `</select></label></div>`;
+        html += `<canvas id="e-field-canvas"></canvas><div id="e-field-plot-msg"></div></div>`;
+      }
+      // Insert nsp density heatmap after the Density group in species section
+      if (skey === 'species' && group.title === 'Density') {
+        html += `<div id="nsp-plot">`;
+        html += `<canvas id="nsp-canvas"></canvas><div id="nsp-plot-msg"></div></div>`;
+      }
       // Insert |B| magnitude panel and heatmap after the Magnetic Field group
       if (skey === 'ext_emf' && group.title === 'Magnetic Field') {
         html += `<div id="b-magnitude"></div>`;
@@ -492,6 +523,9 @@
     }
     if (skey === 'diag_species') {
       validateDiagSpecies(skey, spIdx);
+    }
+    if (skey === 'species') {
+      debouncedRenderNspPlot();
     }
   }
 
@@ -723,12 +757,21 @@
         if (elSection === 'grid_space' && elKey === 'boxsize') {
           syncInjectorsToBoxsize(oldBoxsize);
           debouncedRenderBFieldPlot();
+          debouncedRenderEFieldPlot();
+          debouncedRenderNspPlot();
         }
 
-        // Cross-section: if ext_emf fields changed, update |B| magnitude and plot
+        // Cross-section: if ext_emf fields changed, update |B| and |E| magnitude and plots
         if (elSection === 'ext_emf') {
           if (elKey === 'Bx' || elKey === 'By' || elKey === 'Bz') updateBMagnitude();
           if (elKey === 'Bx' || elKey === 'By' || elKey === 'Bz' || elKey === 'ct') debouncedRenderBFieldPlot();
+          if (elKey === 'Ex' || elKey === 'Ey' || elKey === 'Ez') updateEMagnitude();
+          if (elKey === 'Ex' || elKey === 'Ey' || elKey === 'Ez' || elKey === 'ct') debouncedRenderEFieldPlot();
+        }
+
+        // Species: if nsp or ct changed, update density plot
+        if (elSection === 'species' && (elKey === 'nsp' || elKey === 'ct')) {
+          debouncedRenderNspPlot();
         }
 
         // Section validations
@@ -1115,13 +1158,13 @@
   // ---- |B| field heatmap plot ----
   let _bFieldPlotTimer = null;
 
-  function translateExpr(expr) {
+  function translateExpr(expr, ctValsOverride) {
     if (!expr || !expr.trim()) return '0';
     let s = expr.trim();
     // Replace Fortran d/D scientific notation: 1.0d-3 -> 1.0e-3
     s = s.replace(/(\d)([dD])([+-]?\d)/g, '$1e$3');
     // Replace ct(N) with actual values from state (1-indexed -> 0-indexed)
-    const ctVals = state.ext_emf?.ct || [];
+    const ctVals = ctValsOverride || state.ext_emf?.ct || [];
     s = s.replace(/ct\((\d+)\)/gi, (_, n) => {
       const idx = parseInt(n) - 1;
       const v = parseFloat(ctVals[idx]) || 0;
@@ -1370,6 +1413,367 @@
   function debouncedRenderBFieldPlot() {
     if (_bFieldPlotTimer) clearTimeout(_bFieldPlotTimer);
     _bFieldPlotTimer = setTimeout(renderBFieldPlot, 100);
+  }
+
+  // ---- |E| magnitude display ----
+  function updateEMagnitude() {
+    const container = document.getElementById('e-magnitude');
+    if (!container) return;
+
+    const ex = (state.ext_emf?.Ex || '0.').trim();
+    const ey = (state.ext_emf?.Ey || '0.').trim();
+    const ez = (state.ext_emf?.Ez || '0.').trim();
+
+    const exNum = parseFloat(ex);
+    const eyNum = parseFloat(ey);
+    const ezNum = parseFloat(ez);
+    const exIsNum = !isNaN(exNum) && isFinite(exNum) && String(exNum) !== '' && ex.match(/^[+-]?(\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?$/);
+    const eyIsNum = !isNaN(eyNum) && isFinite(eyNum) && String(eyNum) !== '' && ey.match(/^[+-]?(\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?$/);
+    const ezIsNum = !isNaN(ezNum) && isFinite(ezNum) && String(ezNum) !== '' && ez.match(/^[+-]?(\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?$/);
+
+    let html = `<div class="dt-formula-content">`;
+    html += `<span class="dt-formula-label">|E| magnitude:</span>`;
+
+    if (exIsNum && eyIsNum && ezIsNum) {
+      const mag = Math.sqrt(exNum * exNum + eyNum * eyNum + ezNum * ezNum);
+      const magStr = mag === 0 ? '0' : mag.toPrecision(4);
+      html += `<span class="dt-formula-inline">`;
+      html += `<span class="dt-formula-eq">|E| = sqrt(${ex}\u00b2 + ${ey}\u00b2 + ${ez}\u00b2) = ${magStr}</span>`;
+      html += `</span>`;
+    } else {
+      const fmtTerm = (expr) => {
+        const num = parseFloat(expr);
+        if (!isNaN(num) && isFinite(num) && expr.match(/^[+-]?(\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?$/)) {
+          return String(num) + '\u00b2';
+        }
+        const inner = expr.replace(/^[+-]/, '');
+        if (/[+\-*/^]/.test(inner) || /\s/.test(inner)) {
+          return '(' + expr + ')\u00b2';
+        }
+        return expr + '\u00b2';
+      };
+      html += `<span class="dt-formula-inline">`;
+      html += `<span class="dt-formula-eq">|E| = sqrt(${fmtTerm(ex)} + ${fmtTerm(ey)} + ${fmtTerm(ez)})</span>`;
+      html += `</span>`;
+    }
+    html += `</div>`;
+    container.innerHTML = html;
+
+    debouncedRenderEFieldPlot();
+  }
+
+  // ---- |E| field heatmap plot ----
+  let _eFieldPlotTimer = null;
+  let selectedEComponent = 'mag';
+
+  function renderEFieldPlot() {
+    const container = document.getElementById('e-field-plot');
+    if (!container) return;
+    const canvas = document.getElementById('e-field-canvas');
+    const msgEl = document.getElementById('e-field-plot-msg');
+    if (!canvas || !msgEl) return;
+
+    if (currentDim !== 2) {
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = '';
+
+    const boxsize = state.grid_space?.boxsize || [];
+    const Lx = parseFloat(boxsize[0]) || 1;
+    const Ly = parseFloat(boxsize[1]) || 1;
+
+    const exExpr = translateExpr(state.ext_emf?.Ex || '0.');
+    const eyExpr = translateExpr(state.ext_emf?.Ey || '0.');
+    const ezExpr = translateExpr(state.ext_emf?.Ez || '0.');
+
+    const NX = 200, NY = 200;
+    const plotW = 300, plotH = Math.round(plotW * (Ly / Lx));
+    const barW = 16, barGap = 8, labelW = 50;
+    const marginLeft = 40, marginTop = 10, marginBottom = 30, marginRight = barGap + barW + labelW;
+    const canvasW = marginLeft + plotW + marginRight;
+    const canvasH = marginTop + plotH + marginBottom;
+
+    canvas.width = canvasW;
+    canvas.height = canvasH;
+    canvas.style.width = canvasW + 'px';
+    canvas.style.height = canvasH + 'px';
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvasW, canvasH);
+
+    const comp = selectedEComponent;
+    let emag;
+    try {
+      emag = new Float64Array(NX * NY);
+      const evalExpr = new Function('x1', 'x2', 'x3', `return [${exExpr}, ${eyExpr}, ${ezExpr}];`);
+      let emin = Infinity, emax = -Infinity;
+      for (let iy = 0; iy < NY; iy++) {
+        const y = Ly * (iy + 0.5) / NY;
+        for (let ix = 0; ix < NX; ix++) {
+          const x = Lx * (ix + 0.5) / NX;
+          const [vx, vy, vz] = evalExpr(x, y, 0);
+          let val;
+          if (comp === 'Ex') val = vx;
+          else if (comp === 'Ey') val = vy;
+          else if (comp === 'Ez') val = vz;
+          else val = Math.sqrt(vx * vx + vy * vy + vz * vz);
+          emag[iy * NX + ix] = val;
+          if (val < emin) emin = val;
+          if (val > emax) emax = val;
+        }
+      }
+
+      msgEl.textContent = '';
+      msgEl.style.display = 'none';
+
+      const colorMap = COLORMAPS[selectedColormap] || COLORMAPS.coolwarm;
+
+      const imgData = ctx.createImageData(NX, NY);
+      const range = emax - emin || 1;
+      for (let iy = 0; iy < NY; iy++) {
+        for (let ix = 0; ix < NX; ix++) {
+          const t = (emag[(NY - 1 - iy) * NX + ix] - emin) / range;
+          const [r, g, b] = colorMap(t);
+          const idx = (iy * NX + ix) * 4;
+          imgData.data[idx] = r;
+          imgData.data[idx + 1] = g;
+          imgData.data[idx + 2] = b;
+          imgData.data[idx + 3] = 255;
+        }
+      }
+
+      const offscreen = document.createElement('canvas');
+      offscreen.width = NX;
+      offscreen.height = NY;
+      offscreen.getContext('2d').putImageData(imgData, 0, 0);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(offscreen, marginLeft, marginTop, plotW, plotH);
+
+      ctx.strokeStyle = '#30363d';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(marginLeft, marginTop, plotW, plotH);
+
+      ctx.fillStyle = '#8b949e';
+      ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('x', marginLeft + plotW / 2, canvasH - 2);
+      ctx.textAlign = 'left';
+      ctx.fillText('0', marginLeft, canvasH - 16);
+      ctx.textAlign = 'right';
+      ctx.fillText(Lx % 1 === 0 ? String(Lx) : Lx.toFixed(1), marginLeft + plotW, canvasH - 16);
+      ctx.save();
+      ctx.translate(10, marginTop + plotH / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = 'center';
+      ctx.fillText('y', 0, 0);
+      ctx.restore();
+      ctx.textAlign = 'right';
+      ctx.fillText('0', marginLeft - 4, marginTop + plotH);
+      ctx.fillText(Ly % 1 === 0 ? String(Ly) : Ly.toFixed(1), marginLeft - 4, marginTop + 10);
+
+      const barX = marginLeft + plotW + barGap;
+      const barTop = marginTop;
+      const barH = plotH;
+      for (let iy = 0; iy < barH; iy++) {
+        const t = 1 - iy / barH;
+        const [r, g, b] = colorMap(t);
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(barX, barTop + iy, barW, 1);
+      }
+      ctx.strokeStyle = '#30363d';
+      ctx.strokeRect(barX, barTop, barW, barH);
+
+      ctx.fillStyle = '#8b949e';
+      ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'left';
+      const fmtVal = (v) => {
+        if (v === 0) return '0';
+        if (Math.abs(v) >= 1000 || Math.abs(v) < 0.01) return v.toExponential(1);
+        return v.toPrecision(3);
+      };
+      ctx.fillText(fmtVal(emax), barX + barW + 3, barTop + 9);
+      ctx.fillText(fmtVal(emin), barX + barW + 3, barTop + barH);
+      const emid = (emin + emax) / 2;
+      ctx.fillText(fmtVal(emid), barX + barW + 3, barTop + barH / 2 + 4);
+
+      ctx.fillStyle = '#8b949e';
+      ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'right';
+      const plotLabel = comp === 'mag' ? '|E|' : comp;
+      ctx.fillText(plotLabel, barX + barW, barTop - 2 > 0 ? barTop - 2 : barTop);
+
+    } catch (e) {
+      ctx.clearRect(0, 0, canvasW, canvasH);
+      canvas.width = 0;
+      canvas.height = 0;
+      msgEl.textContent = 'Cannot evaluate E-field expression for heatmap';
+      msgEl.style.display = '';
+    }
+  }
+
+  function debouncedRenderEFieldPlot() {
+    if (_eFieldPlotTimer) clearTimeout(_eFieldPlotTimer);
+    _eFieldPlotTimer = setTimeout(renderEFieldPlot, 100);
+  }
+
+  // ---- nsp density heatmap plot ----
+  let _nspPlotTimer = null;
+
+  function renderNspPlot() {
+    const container = document.getElementById('nsp-plot');
+    if (!container) return;
+    const canvas = document.getElementById('nsp-canvas');
+    const msgEl = document.getElementById('nsp-plot-msg');
+    if (!canvas || !msgEl) return;
+
+    // Only show for 2D
+    if (currentDim !== 2) {
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = '';
+
+    const boxsize = state.grid_space?.boxsize || [];
+    const Lx = parseFloat(boxsize[0]) || 1;
+    const Ly = parseFloat(boxsize[1]) || 1;
+
+    const spIdx = activeSpeciesIdx['species'] || 0;
+    const speciesData = state.species?.[spIdx];
+    if (!speciesData) return;
+
+    const nspExpr = translateExpr(speciesData.nsp || '1.', speciesData.ct || []);
+
+    // Computation grid
+    const NX = 200, NY = 200;
+    // Canvas layout: heatmap + colorbar + labels
+    const plotW = 300, plotH = Math.round(plotW * (Ly / Lx));
+    const barW = 16, barGap = 8, labelW = 50;
+    const marginLeft = 40, marginTop = 10, marginBottom = 30, marginRight = barGap + barW + labelW;
+    const canvasW = marginLeft + plotW + marginRight;
+    const canvasH = marginTop + plotH + marginBottom;
+
+    canvas.width = canvasW;
+    canvas.height = canvasH;
+    canvas.style.width = canvasW + 'px';
+    canvas.style.height = canvasH + 'px';
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvasW, canvasH);
+
+    try {
+      const vals = new Float64Array(NX * NY);
+      const evalExpr = new Function('x1', 'x2', 'x3', 'return (' + nspExpr + ');');
+      let vmin = Infinity, vmax = -Infinity;
+      for (let iy = 0; iy < NY; iy++) {
+        const y = Ly * (iy + 0.5) / NY;
+        for (let ix = 0; ix < NX; ix++) {
+          const x = Lx * (ix + 0.5) / NX;
+          const val = evalExpr(x, y, 0);
+          vals[iy * NX + ix] = val;
+          if (val < vmin) vmin = val;
+          if (val > vmax) vmax = val;
+        }
+      }
+
+      msgEl.textContent = '';
+      msgEl.style.display = 'none';
+
+      const colorMap = COLORMAPS[selectedColormap] || COLORMAPS.viridis;
+
+      // Draw heatmap
+      const imgData = ctx.createImageData(NX, NY);
+      const range = vmax - vmin || 1;
+      for (let iy = 0; iy < NY; iy++) {
+        for (let ix = 0; ix < NX; ix++) {
+          const t = (vals[(NY - 1 - iy) * NX + ix] - vmin) / range;
+          const [r, g, b] = colorMap(t);
+          const idx = (iy * NX + ix) * 4;
+          imgData.data[idx] = r;
+          imgData.data[idx + 1] = g;
+          imgData.data[idx + 2] = b;
+          imgData.data[idx + 3] = 255;
+        }
+      }
+
+      // Draw to offscreen canvas then scale to plot area
+      const offscreen = document.createElement('canvas');
+      offscreen.width = NX;
+      offscreen.height = NY;
+      offscreen.getContext('2d').putImageData(imgData, 0, 0);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(offscreen, marginLeft, marginTop, plotW, plotH);
+
+      // Draw border around plot
+      ctx.strokeStyle = '#30363d';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(marginLeft, marginTop, plotW, plotH);
+
+      // Axis labels
+      ctx.fillStyle = '#8b949e';
+      ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('x', marginLeft + plotW / 2, canvasH - 2);
+      ctx.textAlign = 'left';
+      ctx.fillText('0', marginLeft, canvasH - 16);
+      ctx.textAlign = 'right';
+      ctx.fillText(Lx % 1 === 0 ? String(Lx) : Lx.toFixed(1), marginLeft + plotW, canvasH - 16);
+      // Y axis
+      ctx.save();
+      ctx.translate(10, marginTop + plotH / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = 'center';
+      ctx.fillText('y', 0, 0);
+      ctx.restore();
+      ctx.textAlign = 'right';
+      ctx.fillText('0', marginLeft - 4, marginTop + plotH);
+      ctx.fillText(Ly % 1 === 0 ? String(Ly) : Ly.toFixed(1), marginLeft - 4, marginTop + 10);
+
+      // Colorbar
+      const barX = marginLeft + plotW + barGap;
+      const barTop = marginTop;
+      const barH = plotH;
+      for (let iy = 0; iy < barH; iy++) {
+        const t = 1 - iy / barH;
+        const [r, g, b] = colorMap(t);
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(barX, barTop + iy, barW, 1);
+      }
+      ctx.strokeStyle = '#30363d';
+      ctx.strokeRect(barX, barTop, barW, barH);
+
+      // Colorbar labels
+      ctx.fillStyle = '#8b949e';
+      ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'left';
+      const fmtVal = (v) => {
+        if (v === 0) return '0';
+        if (Math.abs(v) >= 1000 || Math.abs(v) < 0.01) return v.toExponential(1);
+        return v.toPrecision(3);
+      };
+      ctx.fillText(fmtVal(vmax), barX + barW + 3, barTop + 9);
+      ctx.fillText(fmtVal(vmin), barX + barW + 3, barTop + barH);
+      const vmid = (vmin + vmax) / 2;
+      ctx.fillText(fmtVal(vmid), barX + barW + 3, barTop + barH / 2 + 4);
+
+      // Title
+      ctx.fillStyle = '#8b949e';
+      ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText('n', barX + barW, barTop - 2 > 0 ? barTop - 2 : barTop);
+
+    } catch (e) {
+      ctx.clearRect(0, 0, canvasW, canvasH);
+      canvas.width = 0;
+      canvas.height = 0;
+      msgEl.textContent = 'Cannot evaluate density expression';
+      msgEl.style.display = '';
+    }
+  }
+
+  function debouncedRenderNspPlot() {
+    if (_nspPlotTimer) clearTimeout(_nspPlotTimer);
+    _nspPlotTimer = setTimeout(renderNspPlot, 100);
   }
 
   // ---- Diag Species validation, recommendations & size estimates ----

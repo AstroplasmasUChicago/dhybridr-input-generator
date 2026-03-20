@@ -255,6 +255,57 @@ header h1 { font-size: 18px; font-weight: 600; }
   font-style: italic;
 }
 
+/* |E| magnitude panel */
+#e-magnitude {
+  margin-bottom: 6px;
+  padding: 0 14px;
+}
+
+/* |E| field heatmap plot */
+#e-field-plot {
+  padding: 8px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+#e-field-canvas {
+  border-radius: 4px;
+  max-width: 100%;
+  height: auto;
+}
+#e-field-controls {
+  font-size: 12px; color: var(--muted);
+}
+#e-field-controls select {
+  font-size: 12px; background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px;
+}
+#e-field-plot-msg {
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* nsp density heatmap plot */
+#nsp-plot {
+  padding: 8px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+#nsp-canvas {
+  border-radius: 4px;
+  max-width: 100%;
+  height: auto;
+}
+#nsp-plot-msg {
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+}
+
 /* Preview */
 #preview {
   background: var(--surface); border-left: 1px solid var(--border);
