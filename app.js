@@ -240,6 +240,36 @@
             renderEFieldPlot();
           });
         }
+        // 3D slice controls for B-field
+        const bSliceAxisSel = div.querySelector('#b-field-slice-axis');
+        if (bSliceAxisSel) {
+          bSliceAxisSel.addEventListener('change', () => {
+            bFieldSliceAxis = parseInt(bSliceAxisSel.value);
+            renderBFieldPlot();
+          });
+        }
+        const bSlicePosRange = div.querySelector('#b-field-slice-pos');
+        if (bSlicePosRange) {
+          bSlicePosRange.addEventListener('input', () => {
+            bFieldSlicePos = parseFloat(bSlicePosRange.value);
+            renderBFieldPlot();
+          });
+        }
+        // 3D slice controls for E-field
+        const eSliceAxisSel = div.querySelector('#e-field-slice-axis');
+        if (eSliceAxisSel) {
+          eSliceAxisSel.addEventListener('change', () => {
+            eFieldSliceAxis = parseInt(eSliceAxisSel.value);
+            renderEFieldPlot();
+          });
+        }
+        const eSlicePosRange = div.querySelector('#e-field-slice-pos');
+        if (eSlicePosRange) {
+          eSlicePosRange.addEventListener('input', () => {
+            eFieldSlicePos = parseFloat(eSlicePosRange.value);
+            renderEFieldPlot();
+          });
+        }
       }
     }
   }
@@ -297,12 +327,33 @@
         html += `<option value="Ex">Ex</option>`;
         html += `<option value="Ey">Ey</option>`;
         html += `<option value="Ez">Ez</option>`;
-        html += `</select></label></div>`;
+        html += `</select></label>`;
+        html += ` <span class="plot-3d-controls">`;
+        html += `<label>Slice: <select id="e-field-slice-axis">`;
+        html += `<option value="2" selected>z</option>`;
+        html += `<option value="1">y</option>`;
+        html += `<option value="0">x</option>`;
+        html += `</select></label>`;
+        html += `<input type="range" id="e-field-slice-pos" min="0" max="1" step="0.005" value="0.5">`;
+        html += `<span id="e-field-slice-val"></span>`;
+        html += `</span>`;
+        html += `</div>`;
         html += `<canvas id="e-field-canvas"></canvas><div id="e-field-plot-msg"></div></div>`;
       }
       // Insert nsp density heatmap after the Density group in species section
       if (skey === 'species' && group.title === 'Density') {
         html += `<div id="nsp-plot">`;
+        html += `<div id="nsp-controls" style="font-size:12px;color:var(--muted);">`;
+        html += `<span class="plot-3d-controls">`;
+        html += `<label>Slice: <select id="nsp-slice-axis">`;
+        html += `<option value="2" selected>z</option>`;
+        html += `<option value="1">y</option>`;
+        html += `<option value="0">x</option>`;
+        html += `</select></label>`;
+        html += `<input type="range" id="nsp-slice-pos" min="0" max="1" step="0.005" value="0.5">`;
+        html += `<span id="nsp-slice-val"></span>`;
+        html += `</span>`;
+        html += `</div>`;
         html += `<canvas id="nsp-canvas"></canvas><div id="nsp-plot-msg"></div></div>`;
       }
       // Insert |B| magnitude panel and heatmap after the Magnetic Field group
@@ -321,7 +372,17 @@
         html += `<option value="viridis" selected>Viridis</option>`;
         html += `<option value="inferno">Inferno</option>`;
         html += `<option value="grayscale">Grayscale</option>`;
-        html += `</select></label></div>`;
+        html += `</select></label>`;
+        html += ` <span class="plot-3d-controls">`;
+        html += `<label>Slice: <select id="b-field-slice-axis">`;
+        html += `<option value="2" selected>z</option>`;
+        html += `<option value="1">y</option>`;
+        html += `<option value="0">x</option>`;
+        html += `</select></label>`;
+        html += `<input type="range" id="b-field-slice-pos" min="0" max="1" step="0.005" value="0.5">`;
+        html += `<span id="b-field-slice-val"></span>`;
+        html += `</span>`;
+        html += `</div>`;
         html += `<canvas id="b-field-canvas"></canvas><div id="b-field-plot-msg"></div></div>`;
       }
     }
@@ -364,9 +425,13 @@
       extraHTML = `<div class="dt-formula" id="dt-formula"></div>`;
     }
 
+    const fparserBtn = field.fparser
+      ? ` <span class="fparser-help" tabindex="0" title="Function parser syntax&#10;&#10;Variables: x, y, z&#10;Constants: ct(1)..ct(16)&#10;&#10;Functions:&#10;  abs, sin, cos, tan&#10;  htan (tanh), sech&#10;  exp, log, tenlog (log10)&#10;  sqrt, asin, acos, atan, atan2&#10;&#10;Operators: + - * / ** ^ && ||&#10;Conditional: if(cond, true, false)">?</span>`
+      : '';
+
     return `<div class="field-row ${dimClass}">
       <div class="field-label">
-        <span class="name">${field.label}</span>
+        <span class="name">${field.label}${fparserBtn}</span>
         <span class="hint">${field.hint || ''}</span>
       </div>
       <div class="field-input">${extraHTML}${inputHTML}</div>
@@ -525,6 +590,23 @@
       validateDiagSpecies(skey, spIdx);
     }
     if (skey === 'species') {
+      // Bind nsp 3D slice controls
+      const nspSliceAxisSel = container.querySelector('#nsp-slice-axis');
+      if (nspSliceAxisSel) {
+        nspSliceAxisSel.value = String(nspSliceAxis);
+        nspSliceAxisSel.addEventListener('change', () => {
+          nspSliceAxis = parseInt(nspSliceAxisSel.value);
+          renderNspPlot();
+        });
+      }
+      const nspSlicePosRange = container.querySelector('#nsp-slice-pos');
+      if (nspSlicePosRange) {
+        nspSlicePosRange.value = String(nspSlicePos);
+        nspSlicePosRange.addEventListener('input', () => {
+          nspSlicePos = parseFloat(nspSlicePosRange.value);
+          renderNspPlot();
+        });
+      }
       debouncedRenderNspPlot();
     }
   }
@@ -1278,6 +1360,8 @@
 
   let selectedColormap = 'viridis';
   let selectedBComponent = 'mag';
+  let bFieldSliceAxis = 2;   // 0=x, 1=y, 2=z
+  let bFieldSlicePos = 0.5;  // normalized 0..1
 
   function renderBFieldPlot() {
     const container = document.getElementById('b-field-plot');
@@ -1286,25 +1370,174 @@
     const msgEl = document.getElementById('b-field-plot-msg');
     if (!canvas || !msgEl) return;
 
-    // Only show for 2D
-    if (currentDim !== 2) {
+    if (currentDim === 1) {
+      // --- 1D line plot ---
+      container.style.display = '';
+      const c3d = container.querySelector('.plot-3d-controls');
+      if (c3d) c3d.style.display = 'none';
+
+      const boxsize = state.grid_space?.boxsize || [];
+      const Lx = parseFloat(boxsize[0]) || 1;
+
+      const bxExpr = translateExpr(state.ext_emf?.Bx || '0.');
+      const byExpr = translateExpr(state.ext_emf?.By || '0.');
+      const bzExpr = translateExpr(state.ext_emf?.Bz || '0.');
+
+      const NX = 200;
+      const plotW = 300, plotH = 200;
+      const marginLeft = 50, marginTop = 10, marginBottom = 30, marginRight = 10;
+      const canvasW = marginLeft + plotW + marginRight;
+      const canvasH = marginTop + plotH + marginBottom;
+
+      canvas.width = canvasW;
+      canvas.height = canvasH;
+      canvas.style.width = canvasW + 'px';
+      canvas.style.height = canvasH + 'px';
+
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvasW, canvasH);
+
+      const comp = selectedBComponent;
+      try {
+        const evalExpr = new Function('x1', 'x2', 'x3', `return [${bxExpr}, ${byExpr}, ${bzExpr}];`);
+        const data = new Float64Array(NX);
+        let bmin = Infinity, bmax = -Infinity;
+        for (let ix = 0; ix < NX; ix++) {
+          const x = Lx * (ix + 0.5) / NX;
+          const [vx, vy, vz] = evalExpr(x, 0, 0);
+          let val;
+          if (comp === 'Bx') val = vx;
+          else if (comp === 'By') val = vy;
+          else if (comp === 'Bz') val = vz;
+          else val = Math.sqrt(vx * vx + vy * vy + vz * vz);
+          data[ix] = val;
+          if (val < bmin) bmin = val;
+          if (val > bmax) bmax = val;
+        }
+
+        msgEl.textContent = '';
+        msgEl.style.display = 'none';
+
+        // Y-axis range
+        if (bmin === bmax) {
+          if (bmin === 0) { bmin = 0; bmax = 1; }
+          else { const pad = Math.abs(bmin) * 0.1; bmin -= pad; bmax += pad; }
+        }
+        const range = bmax - bmin;
+
+        const fmtVal = (v) => {
+          if (v === 0) return '0';
+          if (Math.abs(v) >= 1000 || Math.abs(v) < 0.01) return v.toExponential(1);
+          return v.toPrecision(3);
+        };
+
+        // Grid lines
+        ctx.strokeStyle = '#21262d';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+          const gx = marginLeft + (plotW * i / 4);
+          ctx.beginPath(); ctx.moveTo(gx, marginTop); ctx.lineTo(gx, marginTop + plotH); ctx.stroke();
+          const gy = marginTop + (plotH * i / 4);
+          ctx.beginPath(); ctx.moveTo(marginLeft, gy); ctx.lineTo(marginLeft + plotW, gy); ctx.stroke();
+        }
+
+        // Axes border
+        ctx.strokeStyle = '#30363d';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(marginLeft, marginTop, plotW, plotH);
+
+        // Draw line
+        ctx.beginPath();
+        ctx.strokeStyle = '#58a6ff';
+        ctx.lineWidth = 2;
+        for (let ix = 0; ix < NX; ix++) {
+          const px = marginLeft + (ix + 0.5) / NX * plotW;
+          const py = marginTop + plotH - ((data[ix] - bmin) / range) * plotH;
+          if (ix === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+
+        // X-axis labels
+        ctx.fillStyle = '#8b949e';
+        ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('x', marginLeft + plotW / 2, canvasH - 2);
+        ctx.textAlign = 'left';
+        ctx.fillText('0', marginLeft, canvasH - 16);
+        ctx.textAlign = 'right';
+        ctx.fillText(Lx % 1 === 0 ? String(Lx) : Lx.toFixed(1), marginLeft + plotW, canvasH - 16);
+
+        // Y-axis labels
+        const plotLabel = comp === 'mag' ? '|B|' : comp;
+        ctx.save();
+        ctx.translate(10, marginTop + plotH / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = 'center';
+        ctx.fillText(plotLabel, 0, 0);
+        ctx.restore();
+        ctx.textAlign = 'right';
+        ctx.fillText(fmtVal(bmin), marginLeft - 4, marginTop + plotH);
+        ctx.fillText(fmtVal(bmax), marginLeft - 4, marginTop + 10);
+
+      } catch (e) {
+        ctx.clearRect(0, 0, canvasW, canvasH);
+        canvas.width = 0;
+        canvas.height = 0;
+        msgEl.textContent = 'Cannot evaluate B-field expression';
+        msgEl.style.display = '';
+      }
+      return;
+    }
+
+    // Show for 2D and 3D
+    if (currentDim < 2) {
       container.style.display = 'none';
       return;
     }
     container.style.display = '';
 
+    // Show/hide 3D controls
+    const controls3d = container.querySelector('.plot-3d-controls');
+    if (controls3d) controls3d.style.display = currentDim === 3 ? '' : 'none';
+
     const boxsize = state.grid_space?.boxsize || [];
     const Lx = parseFloat(boxsize[0]) || 1;
     const Ly = parseFloat(boxsize[1]) || 1;
+    const Lz = parseFloat(boxsize[2]) || 1;
+    const axisNames = ['x', 'y', 'z'];
 
     const bxExpr = translateExpr(state.ext_emf?.Bx || '0.');
     const byExpr = translateExpr(state.ext_emf?.By || '0.');
     const bzExpr = translateExpr(state.ext_emf?.Bz || '0.');
 
+    // Determine axes for heatmap
+    let hAxisLabel, vAxisLabel, La, Lb;
+    let buildCoords; // function(a, b) -> [x, y, z]
+    if (currentDim === 3) {
+      const L = [Lx, Ly, Lz];
+      const sa = bFieldSliceAxis;
+      const freeAxes = [0, 1, 2].filter(i => i !== sa);
+      La = L[freeAxes[0]]; Lb = L[freeAxes[1]];
+      const fixedCoord = bFieldSlicePos * L[sa];
+      hAxisLabel = axisNames[freeAxes[0]];
+      vAxisLabel = axisNames[freeAxes[1]];
+      buildCoords = (a, b) => {
+        const c = [0, 0, 0];
+        c[freeAxes[0]] = a; c[freeAxes[1]] = b; c[sa] = fixedCoord;
+        return c;
+      };
+      // Update slider label
+      const sliceValEl = document.getElementById('b-field-slice-val');
+      if (sliceValEl) sliceValEl.textContent = axisNames[sa] + ' = ' + fixedCoord.toFixed(1);
+    } else {
+      La = Lx; Lb = Ly;
+      hAxisLabel = 'x'; vAxisLabel = 'y';
+      buildCoords = (a, b) => [a, b, 0];
+    }
+
     // Computation grid
     const NX = 200, NY = 200;
-    // Canvas layout: heatmap + colorbar + labels
-    const plotW = 300, plotH = Math.round(plotW * (Ly / Lx));
+    const plotW = 300, plotH = Math.round(plotW * (Lb / La));
     const barW = 16, barGap = 8, labelW = 50;
     const marginLeft = 40, marginTop = 10, marginBottom = 30, marginRight = barGap + barW + labelW;
     const canvasW = marginLeft + plotW + marginRight;
@@ -1318,24 +1551,24 @@
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvasW, canvasH);
 
-    // Evaluate selected field component on grid
     const comp = selectedBComponent;
     let bmag;
     try {
       bmag = new Float64Array(NX * NY);
       const evalExpr = new Function('x1', 'x2', 'x3', `return [${bxExpr}, ${byExpr}, ${bzExpr}];`);
       let bmin = Infinity, bmax = -Infinity;
-      for (let iy = 0; iy < NY; iy++) {
-        const y = Ly * (iy + 0.5) / NY;
-        for (let ix = 0; ix < NX; ix++) {
-          const x = Lx * (ix + 0.5) / NX;
-          const [vx, vy, vz] = evalExpr(x, y, 0);
+      for (let ib = 0; ib < NY; ib++) {
+        const b = Lb * (ib + 0.5) / NY;
+        for (let ia = 0; ia < NX; ia++) {
+          const a = La * (ia + 0.5) / NX;
+          const [cx, cy, cz] = buildCoords(a, b);
+          const [vx, vy, vz] = evalExpr(cx, cy, cz);
           let val;
           if (comp === 'Bx') val = vx;
           else if (comp === 'By') val = vy;
           else if (comp === 'Bz') val = vz;
           else val = Math.sqrt(vx * vx + vy * vy + vz * vz);
-          bmag[iy * NX + ix] = val;
+          bmag[ib * NX + ia] = val;
           if (val < bmin) bmin = val;
           if (val > bmax) bmax = val;
         }
@@ -1346,7 +1579,6 @@
 
       const colorMap = COLORMAPS[selectedColormap] || COLORMAPS.coolwarm;
 
-      // Draw heatmap
       const imgData = ctx.createImageData(NX, NY);
       const range = bmax - bmin || 1;
       for (let iy = 0; iy < NY; iy++) {
@@ -1361,7 +1593,6 @@
         }
       }
 
-      // Draw to offscreen canvas then scale to plot area
       const offscreen = document.createElement('canvas');
       offscreen.width = NX;
       offscreen.height = NY;
@@ -1369,7 +1600,6 @@
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(offscreen, marginLeft, marginTop, plotW, plotH);
 
-      // Draw border around plot
       ctx.strokeStyle = '#30363d';
       ctx.lineWidth = 1;
       ctx.strokeRect(marginLeft, marginTop, plotW, plotH);
@@ -1378,22 +1608,20 @@
       ctx.fillStyle = '#8b949e';
       ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
       ctx.textAlign = 'center';
-      // X axis
-      ctx.fillText('x', marginLeft + plotW / 2, canvasH - 2);
+      ctx.fillText(hAxisLabel, marginLeft + plotW / 2, canvasH - 2);
       ctx.textAlign = 'left';
       ctx.fillText('0', marginLeft, canvasH - 16);
       ctx.textAlign = 'right';
-      ctx.fillText(Lx % 1 === 0 ? String(Lx) : Lx.toFixed(1), marginLeft + plotW, canvasH - 16);
-      // Y axis
+      ctx.fillText(La % 1 === 0 ? String(La) : La.toFixed(1), marginLeft + plotW, canvasH - 16);
       ctx.save();
       ctx.translate(10, marginTop + plotH / 2);
       ctx.rotate(-Math.PI / 2);
       ctx.textAlign = 'center';
-      ctx.fillText('y', 0, 0);
+      ctx.fillText(vAxisLabel, 0, 0);
       ctx.restore();
       ctx.textAlign = 'right';
       ctx.fillText('0', marginLeft - 4, marginTop + plotH);
-      ctx.fillText(Ly % 1 === 0 ? String(Ly) : Ly.toFixed(1), marginLeft - 4, marginTop + 10);
+      ctx.fillText(Lb % 1 === 0 ? String(Lb) : Lb.toFixed(1), marginLeft - 4, marginTop + 10);
 
       // Colorbar
       const barX = marginLeft + plotW + barGap;
@@ -1408,7 +1636,6 @@
       ctx.strokeStyle = '#30363d';
       ctx.strokeRect(barX, barTop, barW, barH);
 
-      // Colorbar labels
       ctx.fillStyle = '#8b949e';
       ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
       ctx.textAlign = 'left';
@@ -1419,11 +1646,9 @@
       };
       ctx.fillText(fmtVal(bmax), barX + barW + 3, barTop + 9);
       ctx.fillText(fmtVal(bmin), barX + barW + 3, barTop + barH);
-      // Mid label
       const bmid = (bmin + bmax) / 2;
       ctx.fillText(fmtVal(bmid), barX + barW + 3, barTop + barH / 2 + 4);
 
-      // Title
       ctx.fillStyle = '#8b949e';
       ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
       ctx.textAlign = 'right';
@@ -1431,7 +1656,6 @@
       ctx.fillText(plotLabel, barX + barW, barTop - 2 > 0 ? barTop - 2 : barTop);
 
     } catch (e) {
-      // Cannot evaluate: show message
       ctx.clearRect(0, 0, canvasW, canvasH);
       canvas.width = 0;
       canvas.height = 0;
@@ -1495,6 +1719,8 @@
   // ---- |E| field heatmap plot ----
   let _eFieldPlotTimer = null;
   let selectedEComponent = 'mag';
+  let eFieldSliceAxis = 2;
+  let eFieldSlicePos = 0.5;
 
   function renderEFieldPlot() {
     const container = document.getElementById('e-field-plot');
@@ -1503,22 +1729,171 @@
     const msgEl = document.getElementById('e-field-plot-msg');
     if (!canvas || !msgEl) return;
 
-    if (currentDim !== 2) {
+    if (currentDim === 1) {
+      // --- 1D line plot ---
+      container.style.display = '';
+      const c3d = container.querySelector('.plot-3d-controls');
+      if (c3d) c3d.style.display = 'none';
+
+      const boxsize = state.grid_space?.boxsize || [];
+      const Lx = parseFloat(boxsize[0]) || 1;
+
+      const exExpr = translateExpr(state.ext_emf?.Ex || '0.');
+      const eyExpr = translateExpr(state.ext_emf?.Ey || '0.');
+      const ezExpr = translateExpr(state.ext_emf?.Ez || '0.');
+
+      const NX = 200;
+      const plotW = 300, plotH = 200;
+      const marginLeft = 50, marginTop = 10, marginBottom = 30, marginRight = 10;
+      const canvasW = marginLeft + plotW + marginRight;
+      const canvasH = marginTop + plotH + marginBottom;
+
+      canvas.width = canvasW;
+      canvas.height = canvasH;
+      canvas.style.width = canvasW + 'px';
+      canvas.style.height = canvasH + 'px';
+
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvasW, canvasH);
+
+      const comp = selectedEComponent;
+      try {
+        const evalExpr = new Function('x1', 'x2', 'x3', `return [${exExpr}, ${eyExpr}, ${ezExpr}];`);
+        const data = new Float64Array(NX);
+        let emin = Infinity, emax = -Infinity;
+        for (let ix = 0; ix < NX; ix++) {
+          const x = Lx * (ix + 0.5) / NX;
+          const [vx, vy, vz] = evalExpr(x, 0, 0);
+          let val;
+          if (comp === 'Ex') val = vx;
+          else if (comp === 'Ey') val = vy;
+          else if (comp === 'Ez') val = vz;
+          else val = Math.sqrt(vx * vx + vy * vy + vz * vz);
+          data[ix] = val;
+          if (val < emin) emin = val;
+          if (val > emax) emax = val;
+        }
+
+        msgEl.textContent = '';
+        msgEl.style.display = 'none';
+
+        // Y-axis range
+        if (emin === emax) {
+          if (emin === 0) { emin = 0; emax = 1; }
+          else { const pad = Math.abs(emin) * 0.1; emin -= pad; emax += pad; }
+        }
+        const range = emax - emin;
+
+        const fmtVal = (v) => {
+          if (v === 0) return '0';
+          if (Math.abs(v) >= 1000 || Math.abs(v) < 0.01) return v.toExponential(1);
+          return v.toPrecision(3);
+        };
+
+        // Grid lines
+        ctx.strokeStyle = '#21262d';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+          const gx = marginLeft + (plotW * i / 4);
+          ctx.beginPath(); ctx.moveTo(gx, marginTop); ctx.lineTo(gx, marginTop + plotH); ctx.stroke();
+          const gy = marginTop + (plotH * i / 4);
+          ctx.beginPath(); ctx.moveTo(marginLeft, gy); ctx.lineTo(marginLeft + plotW, gy); ctx.stroke();
+        }
+
+        // Axes border
+        ctx.strokeStyle = '#30363d';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(marginLeft, marginTop, plotW, plotH);
+
+        // Draw line
+        ctx.beginPath();
+        ctx.strokeStyle = '#58a6ff';
+        ctx.lineWidth = 2;
+        for (let ix = 0; ix < NX; ix++) {
+          const px = marginLeft + (ix + 0.5) / NX * plotW;
+          const py = marginTop + plotH - ((data[ix] - emin) / range) * plotH;
+          if (ix === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+
+        // X-axis labels
+        ctx.fillStyle = '#8b949e';
+        ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('x', marginLeft + plotW / 2, canvasH - 2);
+        ctx.textAlign = 'left';
+        ctx.fillText('0', marginLeft, canvasH - 16);
+        ctx.textAlign = 'right';
+        ctx.fillText(Lx % 1 === 0 ? String(Lx) : Lx.toFixed(1), marginLeft + plotW, canvasH - 16);
+
+        // Y-axis labels
+        const plotLabel = comp === 'mag' ? '|E|' : comp;
+        ctx.save();
+        ctx.translate(10, marginTop + plotH / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = 'center';
+        ctx.fillText(plotLabel, 0, 0);
+        ctx.restore();
+        ctx.textAlign = 'right';
+        ctx.fillText(fmtVal(emin), marginLeft - 4, marginTop + plotH);
+        ctx.fillText(fmtVal(emax), marginLeft - 4, marginTop + 10);
+
+      } catch (e) {
+        ctx.clearRect(0, 0, canvasW, canvasH);
+        canvas.width = 0;
+        canvas.height = 0;
+        msgEl.textContent = 'Cannot evaluate E-field expression';
+        msgEl.style.display = '';
+      }
+      return;
+    }
+
+    // Show for 2D and 3D
+    if (currentDim < 2) {
       container.style.display = 'none';
       return;
     }
     container.style.display = '';
 
+    // Show/hide 3D controls
+    const controls3d = container.querySelector('.plot-3d-controls');
+    if (controls3d) controls3d.style.display = currentDim === 3 ? '' : 'none';
+
     const boxsize = state.grid_space?.boxsize || [];
     const Lx = parseFloat(boxsize[0]) || 1;
     const Ly = parseFloat(boxsize[1]) || 1;
+    const Lz = parseFloat(boxsize[2]) || 1;
+    const axisNames = ['x', 'y', 'z'];
 
     const exExpr = translateExpr(state.ext_emf?.Ex || '0.');
     const eyExpr = translateExpr(state.ext_emf?.Ey || '0.');
     const ezExpr = translateExpr(state.ext_emf?.Ez || '0.');
 
+    let hAxisLabel, vAxisLabel, La, Lb;
+    let buildCoords;
+    if (currentDim === 3) {
+      const L = [Lx, Ly, Lz];
+      const sa = eFieldSliceAxis;
+      const freeAxes = [0, 1, 2].filter(i => i !== sa);
+      La = L[freeAxes[0]]; Lb = L[freeAxes[1]];
+      const fixedCoord = eFieldSlicePos * L[sa];
+      hAxisLabel = axisNames[freeAxes[0]];
+      vAxisLabel = axisNames[freeAxes[1]];
+      buildCoords = (a, b) => {
+        const c = [0, 0, 0];
+        c[freeAxes[0]] = a; c[freeAxes[1]] = b; c[sa] = fixedCoord;
+        return c;
+      };
+      const sliceValEl = document.getElementById('e-field-slice-val');
+      if (sliceValEl) sliceValEl.textContent = axisNames[sa] + ' = ' + fixedCoord.toFixed(1);
+    } else {
+      La = Lx; Lb = Ly;
+      hAxisLabel = 'x'; vAxisLabel = 'y';
+      buildCoords = (a, b) => [a, b, 0];
+    }
+
     const NX = 200, NY = 200;
-    const plotW = 300, plotH = Math.round(plotW * (Ly / Lx));
+    const plotW = 300, plotH = Math.round(plotW * (Lb / La));
     const barW = 16, barGap = 8, labelW = 50;
     const marginLeft = 40, marginTop = 10, marginBottom = 30, marginRight = barGap + barW + labelW;
     const canvasW = marginLeft + plotW + marginRight;
@@ -1538,17 +1913,18 @@
       emag = new Float64Array(NX * NY);
       const evalExpr = new Function('x1', 'x2', 'x3', `return [${exExpr}, ${eyExpr}, ${ezExpr}];`);
       let emin = Infinity, emax = -Infinity;
-      for (let iy = 0; iy < NY; iy++) {
-        const y = Ly * (iy + 0.5) / NY;
-        for (let ix = 0; ix < NX; ix++) {
-          const x = Lx * (ix + 0.5) / NX;
-          const [vx, vy, vz] = evalExpr(x, y, 0);
+      for (let ib = 0; ib < NY; ib++) {
+        const b = Lb * (ib + 0.5) / NY;
+        for (let ia = 0; ia < NX; ia++) {
+          const a = La * (ia + 0.5) / NX;
+          const [cx, cy, cz] = buildCoords(a, b);
+          const [vx, vy, vz] = evalExpr(cx, cy, cz);
           let val;
           if (comp === 'Ex') val = vx;
           else if (comp === 'Ey') val = vy;
           else if (comp === 'Ez') val = vz;
           else val = Math.sqrt(vx * vx + vy * vy + vz * vz);
-          emag[iy * NX + ix] = val;
+          emag[ib * NX + ia] = val;
           if (val < emin) emin = val;
           if (val > emax) emax = val;
         }
@@ -1587,20 +1963,20 @@
       ctx.fillStyle = '#8b949e';
       ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('x', marginLeft + plotW / 2, canvasH - 2);
+      ctx.fillText(hAxisLabel, marginLeft + plotW / 2, canvasH - 2);
       ctx.textAlign = 'left';
       ctx.fillText('0', marginLeft, canvasH - 16);
       ctx.textAlign = 'right';
-      ctx.fillText(Lx % 1 === 0 ? String(Lx) : Lx.toFixed(1), marginLeft + plotW, canvasH - 16);
+      ctx.fillText(La % 1 === 0 ? String(La) : La.toFixed(1), marginLeft + plotW, canvasH - 16);
       ctx.save();
       ctx.translate(10, marginTop + plotH / 2);
       ctx.rotate(-Math.PI / 2);
       ctx.textAlign = 'center';
-      ctx.fillText('y', 0, 0);
+      ctx.fillText(vAxisLabel, 0, 0);
       ctx.restore();
       ctx.textAlign = 'right';
       ctx.fillText('0', marginLeft - 4, marginTop + plotH);
-      ctx.fillText(Ly % 1 === 0 ? String(Ly) : Ly.toFixed(1), marginLeft - 4, marginTop + 10);
+      ctx.fillText(Lb % 1 === 0 ? String(Lb) : Lb.toFixed(1), marginLeft - 4, marginTop + 10);
 
       const barX = marginLeft + plotW + barGap;
       const barTop = marginTop;
@@ -1649,6 +2025,8 @@
 
   // ---- nsp density heatmap plot ----
   let _nspPlotTimer = null;
+  let nspSliceAxis = 2;
+  let nspSlicePos = 0.5;
 
   function renderNspPlot() {
     const container = document.getElementById('nsp-plot');
@@ -1657,16 +2035,151 @@
     const msgEl = document.getElementById('nsp-plot-msg');
     if (!canvas || !msgEl) return;
 
-    // Only show for 2D
-    if (currentDim !== 2) {
+    if (currentDim === 1) {
+      // --- 1D line plot with domain_boundary clipping and nsp_domain masking ---
+      container.style.display = '';
+      const c3d = container.querySelector('.plot-3d-controls');
+      if (c3d) c3d.style.display = 'none';
+
+      const boxsize = state.grid_space?.boxsize || [];
+      const Lx = parseFloat(boxsize[0]) || 1;
+
+      const spIdx = activeSpeciesIdx['species'] || 0;
+      const speciesData = state.species?.[spIdx];
+      if (!speciesData) return;
+
+      const ctVals = speciesData.ct || [];
+      const nspExpr = translateExpr(speciesData.nsp || '1.', ctVals);
+
+      const domBd = speciesData.domain_boundary || [];
+      const xlo = (Number(domBd[0]) >= 0) ? Number(domBd[0]) : 0;
+      const xhi = (Number(domBd[1]) >= 0) ? Number(domBd[1]) : Lx;
+
+      const nspDomainStr = (speciesData.nsp_domain || '').trim();
+      const nspDomainExpr = nspDomainStr ? translateExpr(nspDomainStr, ctVals) : null;
+
+      const NX = 200;
+      const plotW = 300, plotH = 200;
+      const marginLeft = 50, marginTop = 10, marginBottom = 30, marginRight = 10;
+      const canvasW = marginLeft + plotW + marginRight;
+      const canvasH = marginTop + plotH + marginBottom;
+
+      canvas.width = canvasW;
+      canvas.height = canvasH;
+      canvas.style.width = canvasW + 'px';
+      canvas.style.height = canvasH + 'px';
+
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvasW, canvasH);
+
+      try {
+        const evalNsp = new Function('x1', 'x2', 'x3', 'return (' + nspExpr + ');');
+        const evalDomain = nspDomainExpr ? new Function('x1', 'x2', 'x3', 'return (' + nspDomainExpr + ');') : null;
+        const data = new Float64Array(NX);
+        const mask = new Uint8Array(NX);
+        let vmin = Infinity, vmax = -Infinity;
+        for (let ix = 0; ix < NX; ix++) {
+          const x = Lx * (ix + 0.5) / NX;
+          if (x < xlo || x > xhi) { data[ix] = 0; mask[ix] = 0; continue; }
+          if (evalDomain && evalDomain(x, 0, 0) <= 0) { data[ix] = 0; mask[ix] = 0; continue; }
+          const val = evalNsp(x, 0, 0);
+          data[ix] = val; mask[ix] = 1;
+          if (val < vmin) vmin = val;
+          if (val > vmax) vmax = val;
+        }
+        if (!isFinite(vmin)) { vmin = 0; vmax = 1; }
+
+        msgEl.textContent = '';
+        msgEl.style.display = 'none';
+
+        // Y-axis range
+        if (vmin === vmax) {
+          if (vmin === 0) { vmin = 0; vmax = 1; }
+          else { const pad = Math.abs(vmin) * 0.1; vmin -= pad; vmax += pad; }
+        }
+        const range = vmax - vmin;
+
+        const fmtVal = (v) => {
+          if (v === 0) return '0';
+          if (Math.abs(v) >= 1000 || Math.abs(v) < 0.01) return v.toExponential(1);
+          return v.toPrecision(3);
+        };
+
+        // Grid lines
+        ctx.strokeStyle = '#21262d';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+          const gx = marginLeft + (plotW * i / 4);
+          ctx.beginPath(); ctx.moveTo(gx, marginTop); ctx.lineTo(gx, marginTop + plotH); ctx.stroke();
+          const gy = marginTop + (plotH * i / 4);
+          ctx.beginPath(); ctx.moveTo(marginLeft, gy); ctx.lineTo(marginLeft + plotW, gy); ctx.stroke();
+        }
+
+        // Axes border
+        ctx.strokeStyle = '#30363d';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(marginLeft, marginTop, plotW, plotH);
+
+        // Draw line segments (gaps where masked)
+        ctx.strokeStyle = '#58a6ff';
+        ctx.lineWidth = 2;
+        let inSegment = false;
+        for (let ix = 0; ix < NX; ix++) {
+          if (!mask[ix]) { if (inSegment) { ctx.stroke(); inSegment = false; } continue; }
+          const px = marginLeft + (ix + 0.5) / NX * plotW;
+          const py = marginTop + plotH - ((data[ix] - vmin) / range) * plotH;
+          if (!inSegment) { ctx.beginPath(); ctx.moveTo(px, py); inSegment = true; }
+          else { ctx.lineTo(px, py); }
+        }
+        if (inSegment) ctx.stroke();
+
+        // X-axis labels
+        ctx.fillStyle = '#8b949e';
+        ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('x', marginLeft + plotW / 2, canvasH - 2);
+        ctx.textAlign = 'left';
+        ctx.fillText('0', marginLeft, canvasH - 16);
+        ctx.textAlign = 'right';
+        ctx.fillText(Lx % 1 === 0 ? String(Lx) : Lx.toFixed(1), marginLeft + plotW, canvasH - 16);
+
+        // Y-axis labels
+        ctx.save();
+        ctx.translate(10, marginTop + plotH / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = 'center';
+        ctx.fillText('n', 0, 0);
+        ctx.restore();
+        ctx.textAlign = 'right';
+        ctx.fillText(fmtVal(vmin), marginLeft - 4, marginTop + plotH);
+        ctx.fillText(fmtVal(vmax), marginLeft - 4, marginTop + 10);
+
+      } catch (e) {
+        ctx.clearRect(0, 0, canvasW, canvasH);
+        canvas.width = 0;
+        canvas.height = 0;
+        msgEl.textContent = 'Cannot evaluate density expression';
+        msgEl.style.display = '';
+      }
+      return;
+    }
+
+    // Show for 2D and 3D
+    if (currentDim < 2) {
       container.style.display = 'none';
       return;
     }
     container.style.display = '';
 
+    // Show/hide 3D controls
+    const nspControls3d = container.querySelector('.plot-3d-controls');
+    if (nspControls3d) nspControls3d.style.display = currentDim === 3 ? '' : 'none';
+
     const boxsize = state.grid_space?.boxsize || [];
     const Lx = parseFloat(boxsize[0]) || 1;
     const Ly = parseFloat(boxsize[1]) || 1;
+    const Lz = parseFloat(boxsize[2]) || 1;
+    const axisNames = ['x', 'y', 'z'];
 
     const spIdx = activeSpeciesIdx['species'] || 0;
     const speciesData = state.species?.[spIdx];
@@ -1675,21 +2188,57 @@
     const ctVals = speciesData.ct || [];
     const nspExpr = translateExpr(speciesData.nsp || '1.', ctVals);
 
-    // domain_boundary: [x_l, x_r, y_l, y_r, ...] — clip plot to this region if set (>= 0)
+    // domain_boundary: [x_l, x_r, y_l, y_r, z_l, z_r]
     const domBd = speciesData.domain_boundary || [];
-    const xlo = (Number(domBd[0]) >= 0) ? Number(domBd[0]) : 0;
-    const xhi = (Number(domBd[1]) >= 0) ? Number(domBd[1]) : Lx;
-    const ylo = (currentDim >= 2 && Number(domBd[2]) >= 0) ? Number(domBd[2]) : 0;
-    const yhi = (currentDim >= 2 && Number(domBd[3]) >= 0) ? Number(domBd[3]) : Ly;
+    const fullL = [Lx, Ly, Lz];
 
-    // nsp_domain: spatial mask expression — particles only where result > 0
+    let hAxisLabel, vAxisLabel, La, Lb;
+    let buildCoords;
+    let domLoA, domHiA, domLoB, domHiB;
+    let fixedAxisMasked = false;
+
+    if (currentDim === 3) {
+      const sa = nspSliceAxis;
+      const freeAxes = [0, 1, 2].filter(i => i !== sa);
+      La = fullL[freeAxes[0]]; Lb = fullL[freeAxes[1]];
+      const fixedCoord = nspSlicePos * fullL[sa];
+      hAxisLabel = axisNames[freeAxes[0]];
+      vAxisLabel = axisNames[freeAxes[1]];
+      buildCoords = (a, b) => {
+        const c = [0, 0, 0];
+        c[freeAxes[0]] = a; c[freeAxes[1]] = b; c[sa] = fixedCoord;
+        return c;
+      };
+      const sliceValEl = document.getElementById('nsp-slice-val');
+      if (sliceValEl) sliceValEl.textContent = axisNames[sa] + ' = ' + fixedCoord.toFixed(1);
+
+      // Check if fixed coordinate is outside domain_boundary for slice axis
+      const fixLo = Number(domBd[2 * sa]);
+      const fixHi = Number(domBd[2 * sa + 1]);
+      if ((fixLo >= 0 && fixedCoord < fixLo) || (fixHi >= 0 && fixedCoord > fixHi)) {
+        fixedAxisMasked = true;
+      }
+
+      domLoA = (Number(domBd[2 * freeAxes[0]]) >= 0) ? Number(domBd[2 * freeAxes[0]]) : 0;
+      domHiA = (Number(domBd[2 * freeAxes[0] + 1]) >= 0) ? Number(domBd[2 * freeAxes[0] + 1]) : La;
+      domLoB = (Number(domBd[2 * freeAxes[1]]) >= 0) ? Number(domBd[2 * freeAxes[1]]) : 0;
+      domHiB = (Number(domBd[2 * freeAxes[1] + 1]) >= 0) ? Number(domBd[2 * freeAxes[1] + 1]) : Lb;
+    } else {
+      La = Lx; Lb = Ly;
+      hAxisLabel = 'x'; vAxisLabel = 'y';
+      buildCoords = (a, b) => [a, b, 0];
+      domLoA = (Number(domBd[0]) >= 0) ? Number(domBd[0]) : 0;
+      domHiA = (Number(domBd[1]) >= 0) ? Number(domBd[1]) : Lx;
+      domLoB = (currentDim >= 2 && Number(domBd[2]) >= 0) ? Number(domBd[2]) : 0;
+      domHiB = (currentDim >= 2 && Number(domBd[3]) >= 0) ? Number(domBd[3]) : Ly;
+    }
+
+    // nsp_domain: spatial mask expression
     const nspDomainStr = (speciesData.nsp_domain || '').trim();
     const nspDomainExpr = nspDomainStr ? translateExpr(nspDomainStr, ctVals) : null;
 
-    // Computation grid
     const NX = 200, NY = 200;
-    // Canvas layout: heatmap + colorbar + labels
-    const plotW = 300, plotH = Math.round(plotW * (Ly / Lx));
+    const plotW = 300, plotH = Math.round(plotW * (Lb / La));
     const barW = 16, barGap = 8, labelW = 50;
     const marginLeft = 40, marginTop = 10, marginBottom = 30, marginRight = barGap + barW + labelW;
     const canvasW = marginLeft + plotW + marginRight;
@@ -1705,32 +2254,37 @@
 
     try {
       const vals = new Float64Array(NX * NY);
-      const mask = new Uint8Array(NX * NY); // 1 = has particles, 0 = masked out
+      const mask = new Uint8Array(NX * NY);
       const evalNsp = new Function('x1', 'x2', 'x3', 'return (' + nspExpr + ');');
       const evalDomain = nspDomainExpr ? new Function('x1', 'x2', 'x3', 'return (' + nspDomainExpr + ');') : null;
       let vmin = Infinity, vmax = -Infinity;
-      for (let iy = 0; iy < NY; iy++) {
-        const y = Ly * (iy + 0.5) / NY;
-        for (let ix = 0; ix < NX; ix++) {
-          const x = Lx * (ix + 0.5) / NX;
-          const idx = iy * NX + ix;
-          // Apply domain_boundary clipping
-          if (x < xlo || x > xhi || y < ylo || y > yhi) {
+      for (let ib = 0; ib < NY; ib++) {
+        const b = Lb * (ib + 0.5) / NY;
+        for (let ia = 0; ia < NX; ia++) {
+          const a = La * (ia + 0.5) / NX;
+          const idx = ib * NX + ia;
+          // If fixed axis is outside domain_boundary, entire slice is masked
+          if (fixedAxisMasked) {
             vals[idx] = 0; mask[idx] = 0;
             continue;
           }
+          // Apply domain_boundary clipping for free axes
+          if (a < domLoA || a > domHiA || b < domLoB || b > domHiB) {
+            vals[idx] = 0; mask[idx] = 0;
+            continue;
+          }
+          const [cx, cy, cz] = buildCoords(a, b);
           // Apply nsp_domain mask
-          if (evalDomain && evalDomain(x, y, 0) <= 0) {
+          if (evalDomain && evalDomain(cx, cy, cz) <= 0) {
             vals[idx] = 0; mask[idx] = 0;
             continue;
           }
-          const val = evalNsp(x, y, 0);
+          const val = evalNsp(cx, cy, cz);
           vals[idx] = val; mask[idx] = 1;
           if (val < vmin) vmin = val;
           if (val > vmax) vmax = val;
         }
       }
-      // If everything was masked out, set range to avoid NaN
       if (!isFinite(vmin)) { vmin = 0; vmax = 1; }
 
       msgEl.textContent = '';
@@ -1738,7 +2292,6 @@
 
       const colorMap = COLORMAPS[selectedColormap] || COLORMAPS.viridis;
 
-      // Draw heatmap — masked regions shown as dark background
       const imgData = ctx.createImageData(NX, NY);
       const range = vmax - vmin || 1;
       for (let iy = 0; iy < NY; iy++) {
@@ -1746,7 +2299,6 @@
           const srcIdx = (NY - 1 - iy) * NX + ix;
           const pxIdx = (iy * NX + ix) * 4;
           if (!mask[srcIdx]) {
-            // Masked out — dark background
             imgData.data[pxIdx] = 13;
             imgData.data[pxIdx + 1] = 17;
             imgData.data[pxIdx + 2] = 23;
@@ -1762,7 +2314,6 @@
         }
       }
 
-      // Draw to offscreen canvas then scale to plot area
       const offscreen = document.createElement('canvas');
       offscreen.width = NX;
       offscreen.height = NY;
@@ -1770,32 +2321,28 @@
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(offscreen, marginLeft, marginTop, plotW, plotH);
 
-      // Draw border around plot
       ctx.strokeStyle = '#30363d';
       ctx.lineWidth = 1;
       ctx.strokeRect(marginLeft, marginTop, plotW, plotH);
 
-      // Axis labels
       ctx.fillStyle = '#8b949e';
       ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('x', marginLeft + plotW / 2, canvasH - 2);
+      ctx.fillText(hAxisLabel, marginLeft + plotW / 2, canvasH - 2);
       ctx.textAlign = 'left';
       ctx.fillText('0', marginLeft, canvasH - 16);
       ctx.textAlign = 'right';
-      ctx.fillText(Lx % 1 === 0 ? String(Lx) : Lx.toFixed(1), marginLeft + plotW, canvasH - 16);
-      // Y axis
+      ctx.fillText(La % 1 === 0 ? String(La) : La.toFixed(1), marginLeft + plotW, canvasH - 16);
       ctx.save();
       ctx.translate(10, marginTop + plotH / 2);
       ctx.rotate(-Math.PI / 2);
       ctx.textAlign = 'center';
-      ctx.fillText('y', 0, 0);
+      ctx.fillText(vAxisLabel, 0, 0);
       ctx.restore();
       ctx.textAlign = 'right';
       ctx.fillText('0', marginLeft - 4, marginTop + plotH);
-      ctx.fillText(Ly % 1 === 0 ? String(Ly) : Ly.toFixed(1), marginLeft - 4, marginTop + 10);
+      ctx.fillText(Lb % 1 === 0 ? String(Lb) : Lb.toFixed(1), marginLeft - 4, marginTop + 10);
 
-      // Colorbar
       const barX = marginLeft + plotW + barGap;
       const barTop = marginTop;
       const barH = plotH;
@@ -1808,7 +2355,6 @@
       ctx.strokeStyle = '#30363d';
       ctx.strokeRect(barX, barTop, barW, barH);
 
-      // Colorbar labels
       ctx.fillStyle = '#8b949e';
       ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
       ctx.textAlign = 'left';
@@ -1822,7 +2368,6 @@
       const vmid = (vmin + vmax) / 2;
       ctx.fillText(fmtVal(vmid), barX + barW + 3, barTop + barH / 2 + 4);
 
-      // Title
       ctx.fillStyle = '#8b949e';
       ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
       ctx.textAlign = 'right';
