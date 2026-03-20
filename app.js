@@ -192,6 +192,9 @@
     if (key === 'time') {
       updateDtRecommendation();
     }
+    if (key === 'ext_emf') {
+      updateBMagnitude();
+    }
     validateSection(key);
   }
 
@@ -208,6 +211,23 @@
       div.innerHTML = buildSectionHTML(item, sec);
       container.appendChild(div);
       bindSectionInputs(div, item, sec);
+      // Bind colormap selector for ext_emf
+      if (item === 'ext_emf') {
+        const cmapSel = div.querySelector('#b-field-cmap');
+        if (cmapSel) {
+          cmapSel.addEventListener('change', () => {
+            selectedColormap = cmapSel.value;
+            renderBFieldPlot();
+          });
+        }
+        const compSel = div.querySelector('#b-field-component');
+        if (compSel) {
+          compSel.addEventListener('change', () => {
+            selectedBComponent = compSel.value;
+            renderBFieldPlot();
+          });
+        }
+      }
     }
   }
 
@@ -254,6 +274,25 @@
         html += buildFieldRow(skey, field, speciesIdx);
       }
       html += `</div>`;
+      // Insert |B| magnitude panel and heatmap after the Magnetic Field group
+      if (skey === 'ext_emf' && group.title === 'Magnetic Field') {
+        html += `<div id="b-magnitude"></div>`;
+        html += `<div id="b-field-plot">`;
+        html += `<div id="b-field-controls">`;
+        html += `<label>Field: <select id="b-field-component">`;
+        html += `<option value="mag" selected>|B|</option>`;
+        html += `<option value="Bx">Bx</option>`;
+        html += `<option value="By">By</option>`;
+        html += `<option value="Bz">Bz</option>`;
+        html += `</select></label>`;
+        html += ` <label>Colormap: <select id="b-field-cmap">`;
+        html += `<option value="coolwarm">Coolwarm</option>`;
+        html += `<option value="viridis" selected>Viridis</option>`;
+        html += `<option value="inferno">Inferno</option>`;
+        html += `<option value="grayscale">Grayscale</option>`;
+        html += `</select></label></div>`;
+        html += `<canvas id="b-field-canvas"></canvas><div id="b-field-plot-msg"></div></div>`;
+      }
     }
     return html;
   }
@@ -683,6 +722,13 @@
         // Cross-section: if boxsize changed, move injectors that sit at the old edge
         if (elSection === 'grid_space' && elKey === 'boxsize') {
           syncInjectorsToBoxsize(oldBoxsize);
+          debouncedRenderBFieldPlot();
+        }
+
+        // Cross-section: if ext_emf fields changed, update |B| magnitude and plot
+        if (elSection === 'ext_emf') {
+          if (elKey === 'Bx' || elKey === 'By' || elKey === 'Bz') updateBMagnitude();
+          if (elKey === 'Bx' || elKey === 'By' || elKey === 'Bz' || elKey === 'ct') debouncedRenderBFieldPlot();
         }
 
         // Section validations
@@ -1013,6 +1059,317 @@
       texEl.textContent = `dt ≤ Cmax / (c · √(${terms}))  (Cmax = ${safetyFactor})`;
     }
 
+  }
+
+  // ---- |B| magnitude display ----
+  function updateBMagnitude() {
+    const container = document.getElementById('b-magnitude');
+    if (!container) return;
+
+    const bx = (state.ext_emf?.Bx || '0.').trim();
+    const by = (state.ext_emf?.By || '0.').trim();
+    const bz = (state.ext_emf?.Bz || '0.').trim();
+
+    // Try to parse each as a pure number
+    const bxNum = parseFloat(bx);
+    const byNum = parseFloat(by);
+    const bzNum = parseFloat(bz);
+    const bxIsNum = !isNaN(bxNum) && isFinite(bxNum) && String(bxNum) !== '' && bx.match(/^[+-]?(\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?$/);
+    const byIsNum = !isNaN(byNum) && isFinite(byNum) && String(byNum) !== '' && by.match(/^[+-]?(\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?$/);
+    const bzIsNum = !isNaN(bzNum) && isFinite(bzNum) && String(bzNum) !== '' && bz.match(/^[+-]?(\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?$/);
+
+    let html = `<div class="dt-formula-content">`;
+    html += `<span class="dt-formula-label">|B| magnitude:</span>`;
+
+    if (bxIsNum && byIsNum && bzIsNum) {
+      // All numeric — compute the result
+      const mag = Math.sqrt(bxNum * bxNum + byNum * byNum + bzNum * bzNum);
+      const magStr = mag === 0 ? '0' : mag.toPrecision(4);
+      html += `<span class="dt-formula-inline">`;
+      html += `<span class="dt-formula-eq">|B| = sqrt(${bx}\u00b2 + ${by}\u00b2 + ${bz}\u00b2) = ${magStr}</span>`;
+      html += `</span>`;
+    } else {
+      // At least one is a symbolic expression
+      const fmtTerm = (expr) => {
+        const num = parseFloat(expr);
+        if (!isNaN(num) && isFinite(num) && expr.match(/^[+-]?(\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?$/)) {
+          return String(num) + '\u00b2';
+        }
+        // Wrap in parens if it contains operators (except leading sign)
+        const inner = expr.replace(/^[+-]/, '');
+        if (/[+\-*/^]/.test(inner) || /\s/.test(inner)) {
+          return '(' + expr + ')\u00b2';
+        }
+        return expr + '\u00b2';
+      };
+      html += `<span class="dt-formula-inline">`;
+      html += `<span class="dt-formula-eq">|B| = sqrt(${fmtTerm(bx)} + ${fmtTerm(by)} + ${fmtTerm(bz)})</span>`;
+      html += `</span>`;
+    }
+    html += `</div>`;
+    container.innerHTML = html;
+
+    debouncedRenderBFieldPlot();
+  }
+
+  // ---- |B| field heatmap plot ----
+  let _bFieldPlotTimer = null;
+
+  function translateExpr(expr) {
+    if (!expr || !expr.trim()) return '0';
+    let s = expr.trim();
+    // Replace Fortran d/D scientific notation: 1.0d-3 -> 1.0e-3
+    s = s.replace(/(\d)([dD])([+-]?\d)/g, '$1e$3');
+    // Replace ct(N) with actual values from state (1-indexed -> 0-indexed)
+    const ctVals = state.ext_emf?.ct || [];
+    s = s.replace(/ct\((\d+)\)/gi, (_, n) => {
+      const idx = parseInt(n) - 1;
+      const v = parseFloat(ctVals[idx]) || 0;
+      return '(' + v + ')';
+    });
+    // Replace ^ with ** (some Fortran parsers use ^)
+    s = s.replace(/\^/g, '**');
+    // Replace math functions with Math. equivalents
+    const fns = ['cos','sin','sqrt','exp','log','abs','tan','atan','acos','asin','atan2','sinh','cosh','tanh'];
+    for (const fn of fns) {
+      s = s.replace(new RegExp('\\b' + fn + '\\b', 'gi'), 'Math.' + fn);
+    }
+    // Replace pi
+    s = s.replace(/\bpi\b/gi, 'Math.PI');
+    // Fortran parser uses x, y, z for coordinates — map to x1, x2, x3 params
+    // (must come after Math. replacements to avoid mangling e.g. Math.exp)
+    s = s.replace(/\bx\b/g, 'x1');
+    s = s.replace(/\by\b/g, 'x2');
+    s = s.replace(/\bz\b/g, 'x3');
+    return s;
+  }
+
+  // ---- Colormaps ----
+  const COLORMAPS = {
+    coolwarm(t) {
+      t = Math.max(0, Math.min(1, t));
+      // blue (59,76,192) → white (221,221,221) → red (180,4,38)
+      let r, g, b;
+      if (t < 0.5) {
+        const s = t / 0.5;
+        r = Math.round(59 + s * (221 - 59));
+        g = Math.round(76 + s * (221 - 76));
+        b = Math.round(192 + s * (221 - 192));
+      } else {
+        const s = (t - 0.5) / 0.5;
+        r = Math.round(221 + s * (180 - 221));
+        g = Math.round(221 - s * (221 - 4));
+        b = Math.round(221 - s * (221 - 38));
+      }
+      return [r, g, b];
+    },
+    viridis(t) {
+      t = Math.max(0, Math.min(1, t));
+      // purple (68,1,84) → teal (33,145,140) → yellow (253,231,37)
+      let r, g, b;
+      if (t < 0.5) {
+        const s = t / 0.5;
+        r = Math.round(68 + s * (33 - 68));
+        g = Math.round(1 + s * (145 - 1));
+        b = Math.round(84 + s * (140 - 84));
+      } else {
+        const s = (t - 0.5) / 0.5;
+        r = Math.round(33 + s * (253 - 33));
+        g = Math.round(145 + s * (231 - 145));
+        b = Math.round(140 - s * (140 - 37));
+      }
+      return [r, g, b];
+    },
+    inferno(t) {
+      t = Math.max(0, Math.min(1, t));
+      // black (0,0,4) → purple (120,28,109) → orange (229,120,17) → yellow (252,255,164)
+      let r, g, b;
+      if (t < 0.33) {
+        const s = t / 0.33;
+        r = Math.round(s * 120); g = Math.round(s * 28); b = Math.round(4 + s * 105);
+      } else if (t < 0.66) {
+        const s = (t - 0.33) / 0.33;
+        r = Math.round(120 + s * 109); g = Math.round(28 + s * 92); b = Math.round(109 - s * 92);
+      } else {
+        const s = (t - 0.66) / 0.34;
+        r = Math.round(229 + s * 23); g = Math.round(120 + s * 135); b = Math.round(17 + s * 147);
+      }
+      return [r, g, b];
+    },
+    grayscale(t) {
+      t = Math.max(0, Math.min(1, t));
+      const v = Math.round(t * 255);
+      return [v, v, v];
+    },
+  };
+
+  let selectedColormap = 'viridis';
+  let selectedBComponent = 'mag';
+
+  function renderBFieldPlot() {
+    const container = document.getElementById('b-field-plot');
+    if (!container) return;
+    const canvas = document.getElementById('b-field-canvas');
+    const msgEl = document.getElementById('b-field-plot-msg');
+    if (!canvas || !msgEl) return;
+
+    // Only show for 2D
+    if (currentDim !== 2) {
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = '';
+
+    const boxsize = state.grid_space?.boxsize || [];
+    const Lx = parseFloat(boxsize[0]) || 1;
+    const Ly = parseFloat(boxsize[1]) || 1;
+
+    const bxExpr = translateExpr(state.ext_emf?.Bx || '0.');
+    const byExpr = translateExpr(state.ext_emf?.By || '0.');
+    const bzExpr = translateExpr(state.ext_emf?.Bz || '0.');
+
+    // Computation grid
+    const NX = 200, NY = 200;
+    // Canvas layout: heatmap + colorbar + labels
+    const plotW = 300, plotH = Math.round(plotW * (Ly / Lx));
+    const barW = 16, barGap = 8, labelW = 50;
+    const marginLeft = 40, marginTop = 10, marginBottom = 30, marginRight = barGap + barW + labelW;
+    const canvasW = marginLeft + plotW + marginRight;
+    const canvasH = marginTop + plotH + marginBottom;
+
+    canvas.width = canvasW;
+    canvas.height = canvasH;
+    canvas.style.width = canvasW + 'px';
+    canvas.style.height = canvasH + 'px';
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvasW, canvasH);
+
+    // Evaluate selected field component on grid
+    const comp = selectedBComponent;
+    let bmag;
+    try {
+      bmag = new Float64Array(NX * NY);
+      const evalExpr = new Function('x1', 'x2', 'x3', `return [${bxExpr}, ${byExpr}, ${bzExpr}];`);
+      let bmin = Infinity, bmax = -Infinity;
+      for (let iy = 0; iy < NY; iy++) {
+        const y = Ly * (iy + 0.5) / NY;
+        for (let ix = 0; ix < NX; ix++) {
+          const x = Lx * (ix + 0.5) / NX;
+          const [vx, vy, vz] = evalExpr(x, y, 0);
+          let val;
+          if (comp === 'Bx') val = vx;
+          else if (comp === 'By') val = vy;
+          else if (comp === 'Bz') val = vz;
+          else val = Math.sqrt(vx * vx + vy * vy + vz * vz);
+          bmag[iy * NX + ix] = val;
+          if (val < bmin) bmin = val;
+          if (val > bmax) bmax = val;
+        }
+      }
+
+      msgEl.textContent = '';
+      msgEl.style.display = 'none';
+
+      const colorMap = COLORMAPS[selectedColormap] || COLORMAPS.coolwarm;
+
+      // Draw heatmap
+      const imgData = ctx.createImageData(NX, NY);
+      const range = bmax - bmin || 1;
+      for (let iy = 0; iy < NY; iy++) {
+        for (let ix = 0; ix < NX; ix++) {
+          const t = (bmag[(NY - 1 - iy) * NX + ix] - bmin) / range;
+          const [r, g, b] = colorMap(t);
+          const idx = (iy * NX + ix) * 4;
+          imgData.data[idx] = r;
+          imgData.data[idx + 1] = g;
+          imgData.data[idx + 2] = b;
+          imgData.data[idx + 3] = 255;
+        }
+      }
+
+      // Draw to offscreen canvas then scale to plot area
+      const offscreen = document.createElement('canvas');
+      offscreen.width = NX;
+      offscreen.height = NY;
+      offscreen.getContext('2d').putImageData(imgData, 0, 0);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(offscreen, marginLeft, marginTop, plotW, plotH);
+
+      // Draw border around plot
+      ctx.strokeStyle = '#30363d';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(marginLeft, marginTop, plotW, plotH);
+
+      // Axis labels
+      ctx.fillStyle = '#8b949e';
+      ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'center';
+      // X axis
+      ctx.fillText('x', marginLeft + plotW / 2, canvasH - 2);
+      ctx.textAlign = 'left';
+      ctx.fillText('0', marginLeft, canvasH - 16);
+      ctx.textAlign = 'right';
+      ctx.fillText(Lx % 1 === 0 ? String(Lx) : Lx.toFixed(1), marginLeft + plotW, canvasH - 16);
+      // Y axis
+      ctx.save();
+      ctx.translate(10, marginTop + plotH / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = 'center';
+      ctx.fillText('y', 0, 0);
+      ctx.restore();
+      ctx.textAlign = 'right';
+      ctx.fillText('0', marginLeft - 4, marginTop + plotH);
+      ctx.fillText(Ly % 1 === 0 ? String(Ly) : Ly.toFixed(1), marginLeft - 4, marginTop + 10);
+
+      // Colorbar
+      const barX = marginLeft + plotW + barGap;
+      const barTop = marginTop;
+      const barH = plotH;
+      for (let iy = 0; iy < barH; iy++) {
+        const t = 1 - iy / barH;
+        const [r, g, b] = colorMap(t);
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(barX, barTop + iy, barW, 1);
+      }
+      ctx.strokeStyle = '#30363d';
+      ctx.strokeRect(barX, barTop, barW, barH);
+
+      // Colorbar labels
+      ctx.fillStyle = '#8b949e';
+      ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'left';
+      const fmtVal = (v) => {
+        if (v === 0) return '0';
+        if (Math.abs(v) >= 1000 || Math.abs(v) < 0.01) return v.toExponential(1);
+        return v.toPrecision(3);
+      };
+      ctx.fillText(fmtVal(bmax), barX + barW + 3, barTop + 9);
+      ctx.fillText(fmtVal(bmin), barX + barW + 3, barTop + barH);
+      // Mid label
+      const bmid = (bmin + bmax) / 2;
+      ctx.fillText(fmtVal(bmid), barX + barW + 3, barTop + barH / 2 + 4);
+
+      // Title
+      ctx.fillStyle = '#8b949e';
+      ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'right';
+      const plotLabel = comp === 'mag' ? '|B|' : comp;
+      ctx.fillText(plotLabel, barX + barW, barTop - 2 > 0 ? barTop - 2 : barTop);
+
+    } catch (e) {
+      // Cannot evaluate: show message
+      ctx.clearRect(0, 0, canvasW, canvasH);
+      canvas.width = 0;
+      canvas.height = 0;
+      msgEl.textContent = 'Cannot evaluate B-field expression for heatmap';
+      msgEl.style.display = '';
+    }
+  }
+
+  function debouncedRenderBFieldPlot() {
+    if (_bFieldPlotTimer) clearTimeout(_bFieldPlotTimer);
+    _bFieldPlotTimer = setTimeout(renderBFieldPlot, 100);
   }
 
   // ---- Diag Species validation, recommendations & size estimates ----
