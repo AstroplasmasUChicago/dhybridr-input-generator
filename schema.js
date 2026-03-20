@@ -182,7 +182,7 @@ const SCHEMA = {
     fields: [
       { key: 'loadbalance', label: 'loadbalance', type: 'bool', dim: 0, default: true, hint: 'Enable load balancing' },
       { key: 'ifdynamicloadbalance', label: 'ifdynamicloadbalance', type: 'bool', dim: 0, default: true, hint: 'Dynamic rebalancing' },
-      { key: 'dynamicloadbalancestep', label: 'dynamicloadbalancestep', type: 'int', dim: 0, default: 35, hint: 'Steps between rebalances' },
+      { key: 'dynamicloadbalancestep', label: 'dynamicloadbalancestep', type: 'int', dim: 0, default: 500, hint: 'Steps between rebalances' },
     ]
   },
 
