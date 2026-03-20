@@ -689,7 +689,8 @@
         if (elSection === 'grid_space') validateSection('grid_space');
         if (elSection === 'time') {
           validateSection('time');
-          validateSection('global_output'); // ndump vs niter
+          validateSection('global_output'); // ndump vs niter, adaptive_dt
+          validateSection('raw_diag'); // adaptive_dt
         }
         if (elSection === 'global_output') {
           validateSection('global_output');
@@ -931,6 +932,8 @@
 
   // ---- Auto-update dt using CFL: dt = 0.5 / (c * sqrt(sum(1/dx_i^2))) ----
   function autoUpdateDt() {
+    // Skip auto-update when adaptive_dt is enabled — Fortran manages dt
+    if (state.time?.adaptive_dt) return;
     const ncells = state.grid_space?.ncells || [];
     const boxsize = state.grid_space?.boxsize || [];
     const c = parseFloat(state.time?.c) || 100;
@@ -1254,26 +1257,65 @@
 
     if (skey === 'time') {
       const c = Number(state.time?.c) || 0;
-      const niter = Number(state.time?.niter) || 0;
+      const niter = Number(state.time?.niter);
+      const tend = parseFloat(state.time?.tend);
       const stiter = Number(state.time?.stiter) || 0;
+      const adaptiveDt = state.time?.adaptive_dt;
+      const niterDisabled = isNaN(niter) || niter < 0;
+      const tendDisabled = isNaN(tend) || tend < 0;
+
       if (c <= 0) warnings.push(`c = ${c} — speed of light must be > 0`);
-      if (niter <= 0) warnings.push(`niter = ${niter} — must be > 0`);
-      if (stiter >= niter && stiter > 0) warnings.push(`stiter (${stiter}) ≥ niter (${niter}) — simulation will never start`);
+      if (niterDisabled && tendDisabled) {
+        warnings.push('Both niter and tend are disabled (-1) — one must be set');
+      }
+      if (!niterDisabled && !tendDisabled) {
+        warnings.push('Both niter and tend are set — the code will refuse to start. Set one to -1');
+      }
+      if (!niterDisabled && niter <= 0) warnings.push(`niter = ${niter} — must be > 0`);
+      if (!tendDisabled && tend <= 0) warnings.push(`tend = ${tend} — must be > 0`);
+      if (!niterDisabled && stiter >= niter && stiter > 0) {
+        warnings.push(`stiter (${stiter}) ≥ niter (${niter}) — simulation will never start`);
+      }
+      if (adaptiveDt) {
+        const cflFactor = parseFloat(state.time?.cfl_factor) || 0;
+        if (cflFactor <= 0 || cflFactor > 1) {
+          warnings.push(`cfl_factor = ${cflFactor} — should be in (0, 1]`);
+        }
+        if (tendDisabled && !niterDisabled) {
+          warnings.push('adaptive_dt with niter: niter may not reflect actual simulation time — consider using tend instead');
+        }
+      }
     }
 
     if (skey === 'global_output') {
-      const niter = Number(state.time?.niter) || 0;
+      const adaptiveDt = state.time?.adaptive_dt;
+      const niter = Number(state.time?.niter);
       const ndump = Number(state.global_output?.ndump) || 0;
-      if (ndump > niter && niter > 0) warnings.push(`ndump (${ndump}) > niter (${niter}) — no diagnostics will be written`);
+      const tdump = parseFloat(state.global_output?.tdump);
+      const ndumpSet = ndump > 0;
+      const tdumpSet = !isNaN(tdump) && tdump > 0;
+
+      if (niter > 0 && ndumpSet && ndump > niter) warnings.push(`ndump (${ndump}) > niter (${niter}) — no diagnostics will be written`);
+      if (ndumpSet && tdumpSet) warnings.push('Both ndump and tdump are set — the code will refuse to start. Set one to -1');
+      if (!ndumpSet && !tdumpSet) warnings.push('Both ndump and tdump are disabled — no diagnostics will be written');
+      if (adaptiveDt && ndumpSet && !tdumpSet) warnings.push('adaptive_dt is on — use tdump instead of ndump (dt varies each step)');
     }
 
     if (skey === 'raw_diag') {
+      const adaptiveDt = state.time?.adaptive_dt;
       const ndump = Number(state.global_output?.ndump) || 0;
       const spIdx = activeSpeciesIdx['raw_diag'] || 0;
-      const rawNdump = Number(state.raw_diag?.[spIdx]?.raw_ndump) || 0;
-      if (ndump > 0 && rawNdump > 0 && rawNdump % ndump !== 0) {
+      const data = state.raw_diag?.[spIdx];
+      const rawNdump = Number(data?.raw_ndump) || 0;
+      const rawTdump = parseFloat(data?.raw_tdump);
+      const rawNdumpSet = rawNdump > 0;
+      const rawTdumpSet = !isNaN(rawTdump) && rawTdump > 0;
+
+      if (rawNdumpSet && rawTdumpSet) warnings.push('Both raw_ndump and raw_tdump are set — the code will refuse to start. Set one to -1');
+      if (ndump > 0 && rawNdumpSet && rawNdump % ndump !== 0) {
         warnings.push(`raw_ndump (${rawNdump}) must be a multiple of ndump (${ndump})`);
       }
+      if (adaptiveDt && rawNdumpSet && !rawTdumpSet) warnings.push('adaptive_dt is on — use raw_tdump instead of raw_ndump');
     }
 
     msgEl.innerHTML = warnings.map(w => `<div class="validation-warn">\u26a0 ${w}</div>`).join('');

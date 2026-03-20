@@ -22,11 +22,14 @@ const SCHEMA = {
     desc: 'Simulation time stepping parameters.',
     required: true,
     fields: [
-      { key: 'dt', label: 'dt', type: 'real', dim: 0, default: 0.0025, hint: 'Time step' },
-      { key: 'niter', label: 'niter', type: 'int', dim: 0, default: 2000, hint: 'Number of iterations' },
+      { key: 'dt', label: 'dt', type: 'real', dim: 0, default: 0.0025, hint: 'Time step (initial if adaptive_dt)' },
+      { key: 'niter', label: 'niter', type: 'int', dim: 0, default: 2000, hint: 'Number of iterations (-1=use tend)' },
+      { key: 'tend', label: 'tend', type: 'real', dim: 0, default: -1.0, hint: 'End time (-1=use niter)' },
       { key: 't0', label: 't0', type: 'real', dim: 0, default: 0.0, hint: 'Initial time' },
       { key: 'stiter', label: 'stiter', type: 'int', dim: 0, default: 0, hint: 'Starting iteration number' },
       { key: 'c', label: 'c', type: 'real', dim: 0, default: 100.0, hint: 'Speed of light' },
+      { key: 'adaptive_dt', label: 'adaptive_dt', type: 'bool', dim: 0, default: false, hint: 'Adaptive time stepping' },
+      { key: 'cfl_factor', label: 'cfl_factor', type: 'real', dim: 0, default: 0.5, hint: 'CFL safety factor (used with adaptive_dt)' },
     ]
   },
 
@@ -60,6 +63,7 @@ const SCHEMA = {
     fields: [
       { key: 'dodump', label: 'dodump', type: 'bool', dim: 0, default: true, hint: 'Enable diagnostic dumps' },
       { key: 'ndump', label: 'ndump', type: 'int', dim: 0, default: 100, hint: 'Iterations between dumps' },
+      { key: 'tdump', label: 'tdump', type: 'real', dim: 0, default: -1.0, hint: 'Time between dumps (-1=use ndump)', advanced: true },
       { key: 'output_folder', label: 'output_folder', type: 'str', dim: 0, default: 'Output', hint: 'Output directory' },
       { key: 'B0', label: 'B0', type: 'real', dim: 0, default: 3.05191e-7, hint: 'B field normalization (T)' },
       { key: 'n0', label: 'n0', type: 'real', dim: 0, default: 1e6, hint: 'Density normalization (m\u207b\u00b3)' },
@@ -161,6 +165,7 @@ const SCHEMA = {
     fields: [
       { key: 'ifsmooth', label: 'ifsmooth', type: 'bool', dim: 0, default: true, hint: 'Smooth fields (overridden to .true.)' },
       { key: 'ifsmoothextfields', label: 'ifsmoothextfields', type: 'bool', dim: 0, default: true, hint: 'Smooth external fields' },
+      { key: 'ifsmoothfields', label: 'ifsmoothfields', type: 'bool', dim: 0, default: true, hint: 'Smooth self-consistent fields' },
       { key: 'filternpass', label: 'filternpass', type: 'int', dim: 0, default: 6, hint: 'Filter passes' },
       { key: 'compensate', label: 'compensate', type: 'bool', dim: 0, default: false, hint: 'Compensating filter (overridden to .false.)' },
       { key: 'subniter', label: 'subniter', type: 'int', dim: 0, default: 8, hint: 'Sub-iterations (overridden to 8)' },
@@ -266,6 +271,8 @@ const SCHEMA = {
         default: [2,2,2], hint: 'Particles per cell', dimLabels: ['x','y','z'] },
       { key: 'vdrift', label: 'vdrift', type: 'real', dim: 'VDIM',
         default: [0,0,0], hint: 'Drift velocity', dimLabels: ['vx','vy','vz'] },
+      { key: 'vboost', label: 'vboost', type: 'real', dim: 'VDIM',
+        default: [0,0,0], hint: 'Boost velocity', dimLabels: ['vx','vy','vz'], advanced: true },
       { key: 'vth', label: 'vth', type: 'real', dim: 0, default: 0, hint: 'Thermal velocity' },
       { key: 'sttime', label: 'sttime', type: 'real', dim: 0, default: 0, hint: 'Start time' },
       { key: 'endtime', label: 'endtime', type: 'real', dim: 0, default: 1e30, hint: 'End time' },
@@ -331,6 +338,7 @@ const SCHEMA = {
     fields: [
       { key: 'raw_dump', label: 'raw_dump', type: 'bool', dim: 0, default: false, hint: 'Enable raw dumps' },
       { key: 'raw_ndump', label: 'raw_ndump', type: 'int', dim: 0, default: -1, hint: 'Iterations between raw dumps' },
+      { key: 'raw_tdump', label: 'raw_tdump', type: 'real', dim: 0, default: -1.0, hint: 'Time between raw dumps (-1=use raw_ndump)', advanced: true },
       { key: 'raw_volume', label: 'raw_volume', type: 'real', dim: 'DIM2',
         default: [-1,-1,-1,-1,-1,-1], hint: 'Spatial volume filter',
         dimLabels: ['x\u2097','x\u1d63','y\u2097','y\u1d63','z\u2097','z\u1d63'] },
