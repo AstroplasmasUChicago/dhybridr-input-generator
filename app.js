@@ -769,8 +769,8 @@
           if (elKey === 'Ex' || elKey === 'Ey' || elKey === 'Ez' || elKey === 'ct') debouncedRenderEFieldPlot();
         }
 
-        // Species: if nsp or ct changed, update density plot
-        if (elSection === 'species' && (elKey === 'nsp' || elKey === 'ct')) {
+        // Species: if nsp, nsp_domain, domain_boundary, or ct changed, update density plot
+        if (elSection === 'species' && (elKey === 'nsp' || elKey === 'nsp_domain' || elKey === 'domain_boundary' || elKey === 'ct')) {
           debouncedRenderNspPlot();
         }
 
@@ -790,6 +790,22 @@
 
       el.addEventListener('input', onChange);
       el.addEventListener('change', onChange);
+
+      // Restore default on blur if field is empty
+      if (el.tagName === 'INPUT' && el.type === 'text' || el.tagName === 'TEXTAREA') {
+        el.addEventListener('blur', () => {
+          const field = sec.fields.find(f => f.key === elKey);
+          if (!field) return;
+          if (el.value.trim() === '' && field.default !== undefined && field.default !== '') {
+            const arrIdx = el.dataset.index !== undefined ? parseInt(el.dataset.index) : undefined;
+            const defVal = arrIdx !== undefined && Array.isArray(field.default) ? field.default[arrIdx] : field.default;
+            if (defVal !== undefined && defVal !== '') {
+              el.value = defVal;
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          }
+        });
+      }
     });
   }
 
@@ -1170,9 +1186,19 @@
       const v = parseFloat(ctVals[idx]) || 0;
       return '(' + v + ')';
     });
+    // Replace if(cond, true, false) → JS ternary ((cond) > 0 ? (true) : (false))
+    // Handle nested if() by replacing innermost first, repeatedly
+    const ifRegex = /\bif\(([^(),]+(?:\([^()]*\))?[^(),]*),([^(),]+(?:\([^()]*\))?[^(),]*),([^(),]+(?:\([^()]*\))?[^(),]*)\)/gi;
+    let prev = '';
+    while (prev !== s) {
+      prev = s;
+      s = s.replace(ifRegex, '(($1) > 0 ? ($2) : ($3))');
+    }
     // Replace ^ with ** (some Fortran parsers use ^)
     s = s.replace(/\^/g, '**');
     // Replace math functions with Math. equivalents
+    // htan is a dHybridR alias for tanh — replace before general fn mapping
+    s = s.replace(/\bhtan\b/gi, 'tanh');
     const fns = ['cos','sin','sqrt','exp','log','abs','tan','atan','acos','asin','atan2','sinh','cosh','tanh'];
     for (const fn of fns) {
       s = s.replace(new RegExp('\\b' + fn + '\\b', 'gi'), 'Math.' + fn);
@@ -1642,7 +1668,19 @@
     const speciesData = state.species?.[spIdx];
     if (!speciesData) return;
 
-    const nspExpr = translateExpr(speciesData.nsp || '1.', speciesData.ct || []);
+    const ctVals = speciesData.ct || [];
+    const nspExpr = translateExpr(speciesData.nsp || '1.', ctVals);
+
+    // domain_boundary: [x_l, x_r, y_l, y_r, ...] — clip plot to this region if set (>= 0)
+    const domBd = speciesData.domain_boundary || [];
+    const xlo = (Number(domBd[0]) >= 0) ? Number(domBd[0]) : 0;
+    const xhi = (Number(domBd[1]) >= 0) ? Number(domBd[1]) : Lx;
+    const ylo = (currentDim >= 2 && Number(domBd[2]) >= 0) ? Number(domBd[2]) : 0;
+    const yhi = (currentDim >= 2 && Number(domBd[3]) >= 0) ? Number(domBd[3]) : Ly;
+
+    // nsp_domain: spatial mask expression — particles only where result > 0
+    const nspDomainStr = (speciesData.nsp_domain || '').trim();
+    const nspDomainExpr = nspDomainStr ? translateExpr(nspDomainStr, ctVals) : null;
 
     // Computation grid
     const NX = 200, NY = 200;
@@ -1663,36 +1701,60 @@
 
     try {
       const vals = new Float64Array(NX * NY);
-      const evalExpr = new Function('x1', 'x2', 'x3', 'return (' + nspExpr + ');');
+      const mask = new Uint8Array(NX * NY); // 1 = has particles, 0 = masked out
+      const evalNsp = new Function('x1', 'x2', 'x3', 'return (' + nspExpr + ');');
+      const evalDomain = nspDomainExpr ? new Function('x1', 'x2', 'x3', 'return (' + nspDomainExpr + ');') : null;
       let vmin = Infinity, vmax = -Infinity;
       for (let iy = 0; iy < NY; iy++) {
         const y = Ly * (iy + 0.5) / NY;
         for (let ix = 0; ix < NX; ix++) {
           const x = Lx * (ix + 0.5) / NX;
-          const val = evalExpr(x, y, 0);
-          vals[iy * NX + ix] = val;
+          const idx = iy * NX + ix;
+          // Apply domain_boundary clipping
+          if (x < xlo || x > xhi || y < ylo || y > yhi) {
+            vals[idx] = 0; mask[idx] = 0;
+            continue;
+          }
+          // Apply nsp_domain mask
+          if (evalDomain && evalDomain(x, y, 0) <= 0) {
+            vals[idx] = 0; mask[idx] = 0;
+            continue;
+          }
+          const val = evalNsp(x, y, 0);
+          vals[idx] = val; mask[idx] = 1;
           if (val < vmin) vmin = val;
           if (val > vmax) vmax = val;
         }
       }
+      // If everything was masked out, set range to avoid NaN
+      if (!isFinite(vmin)) { vmin = 0; vmax = 1; }
 
       msgEl.textContent = '';
       msgEl.style.display = 'none';
 
       const colorMap = COLORMAPS[selectedColormap] || COLORMAPS.viridis;
 
-      // Draw heatmap
+      // Draw heatmap — masked regions shown as dark background
       const imgData = ctx.createImageData(NX, NY);
       const range = vmax - vmin || 1;
       for (let iy = 0; iy < NY; iy++) {
         for (let ix = 0; ix < NX; ix++) {
-          const t = (vals[(NY - 1 - iy) * NX + ix] - vmin) / range;
-          const [r, g, b] = colorMap(t);
-          const idx = (iy * NX + ix) * 4;
-          imgData.data[idx] = r;
-          imgData.data[idx + 1] = g;
-          imgData.data[idx + 2] = b;
-          imgData.data[idx + 3] = 255;
+          const srcIdx = (NY - 1 - iy) * NX + ix;
+          const pxIdx = (iy * NX + ix) * 4;
+          if (!mask[srcIdx]) {
+            // Masked out — dark background
+            imgData.data[pxIdx] = 13;
+            imgData.data[pxIdx + 1] = 17;
+            imgData.data[pxIdx + 2] = 23;
+            imgData.data[pxIdx + 3] = 255;
+          } else {
+            const t = (vals[srcIdx] - vmin) / range;
+            const [r, g, b] = colorMap(t);
+            imgData.data[pxIdx] = r;
+            imgData.data[pxIdx + 1] = g;
+            imgData.data[pxIdx + 2] = b;
+            imgData.data[pxIdx + 3] = 255;
+          }
         }
       }
 
