@@ -427,7 +427,9 @@
     }
 
     const fparserBtn = field.fparser
-      ? ` <span class="fparser-help" tabindex="0" title="Function parser syntax&#10;&#10;Variables: x, y, z&#10;Constants: ct(1)..ct(16)&#10;&#10;Functions:&#10;  abs, sin, cos, tan&#10;  htan (tanh), sech&#10;  exp, log, tenlog (log10)&#10;  sqrt, asin, acos, atan, atan2&#10;&#10;Operators: + - * / ** ^ && ||&#10;Conditional: if(cond, true, false)">?</span>`
+      ? ` <span class="fparser-help" tabindex="0" title="Function parser syntax&#10;&#10;Variables: x, y, z` +
+        (field.key === 'selectrule' ? `, vx, vy, vz` : '') +
+        `&#10;Constants: ct(1)..ct(16)&#10;&#10;Functions:&#10;  abs, sin, cos, tan, htan (tanh)&#10;  hsec (sech), exp, log, tenlog (log10)&#10;  sqrt, asin, acos, atan, atan2&#10;  pow(a,b), not(a), neg(a)&#10;&#10;Operators: + - * / ^ **&#10;Logic: && || == != >= <= > <&#10;Conditional: if(cond, true, false)">?</span>`
       : '';
 
     return `<div class="field-row ${dimClass}">
@@ -1300,8 +1302,15 @@
     // dHybridR fparser aliases — replace before general fn mapping
     s = s.replace(/\bhtan\b/gi, 'tanh');
     s = s.replace(/\btenlog\b/gi, 'log10');
-    // sech(expr) → 1/Math.cosh(expr) — not a standard Math fn, compute inline
+    s = s.replace(/\bhsec\b/gi, 'sech');
+    // sech(expr) → 1/Math.cosh(expr)
     s = s.replace(/\bsech\(/gi, '1/Math.cosh(');
+    // pow(a,b) → Math.pow(a,b)
+    s = s.replace(/\bpow\b/gi, 'Math.pow');
+    // not(a) → (a > 0 ? 0 : 1) — use arrow fn that self-closes
+    s = s.replace(/\bnot\(/gi, '((_n_)=>(_n_>0?0:1))(');
+    // neg(a) → -(a)
+    s = s.replace(/\bneg\(/gi, '-(');
     // dHybridR fparser supported functions → Math.*
     const fns = ['cos','sin','sqrt','exp','log','abs','tan','atan','acos','asin','atan2','tanh','log10'];
     for (const fn of fns) {

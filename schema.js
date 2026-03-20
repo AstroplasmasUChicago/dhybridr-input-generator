@@ -344,7 +344,7 @@ const SCHEMA = {
         dimLabels: ['x\u2097','x\u1d63','y\u2097','y\u1d63','z\u2097','z\u1d63'] },
       { key: 'raw_dump_fraction', label: 'raw_dump_fraction', type: 'real', dim: 0, default: 1.0, hint: 'Fraction of particles to dump' },
       { key: 'v_min', label: 'v_min', type: 'real', dim: 0, default: 0, hint: 'Minimum velocity filter' },
-      { key: 'selectrule', label: 'selectrule', type: 'str', dim: 0, default: '1.', fparser: true, hint: 'Particle selection — dumps where > 0.' },
+      { key: 'selectrule', label: 'selectrule', type: 'str', dim: 0, default: '1.', fparser: true, hint: 'Particle filter expression — dumps where result > 0. Uses x,y,z (position) and vx,vy,vz (velocity). Default "1." falls back to raw_volume/v_min/raw_dump_fraction filters. Any other value replaces those filters entirely.' },
       { key: 'n_constants', label: 'n_constants', type: 'int', dim: 0, default: 0, hint: 'Number of constants' },
       { key: 'ct', label: 'ct', type: 'real', dim: 16, default: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], hint: 'Constants ct(1:16)', advanced: true },
     ]
