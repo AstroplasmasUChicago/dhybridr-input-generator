@@ -874,16 +874,33 @@
       el.addEventListener('input', onChange);
       el.addEventListener('change', onChange);
 
-      // Restore default on blur if field is empty
+      // Restore current state value on blur if field is empty
       if (el.tagName === 'INPUT' && el.type === 'text' || el.tagName === 'TEXTAREA') {
         el.addEventListener('blur', () => {
           const field = sec.fields.find(f => f.key === elKey);
           if (!field) return;
-          if (el.value.trim() === '' && field.default !== undefined && field.default !== '') {
+          if (el.value.trim() === '') {
+            const spIdx = el.dataset.species !== undefined ? parseInt(el.dataset.species) : undefined;
             const arrIdx = el.dataset.index !== undefined ? parseInt(el.dataset.index) : undefined;
-            const defVal = arrIdx !== undefined && Array.isArray(field.default) ? field.default[arrIdx] : field.default;
-            if (defVal !== undefined && defVal !== '') {
-              el.value = defVal;
+            // Get current value from state, fall back to schema default
+            let target;
+            if (spIdx !== undefined && sec.multiPerSpecies) {
+              const injIdx = activeInjectorIdx[spIdx] || 0;
+              target = state[elSection]?.[spIdx]?.[injIdx];
+            } else if (spIdx !== undefined) {
+              target = state[elSection]?.[spIdx];
+            } else {
+              target = state[elSection];
+            }
+            let restoreVal;
+            if (target && target[elKey] !== undefined) {
+              restoreVal = arrIdx !== undefined && Array.isArray(target[elKey]) ? target[elKey][arrIdx] : target[elKey];
+            }
+            if (restoreVal === undefined || restoreVal === '') {
+              restoreVal = arrIdx !== undefined && Array.isArray(field.default) ? field.default[arrIdx] : field.default;
+            }
+            if (restoreVal !== undefined && restoreVal !== '') {
+              el.value = restoreVal;
               el.dispatchEvent(new Event('input', { bubbles: true }));
             }
           }
