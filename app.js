@@ -470,7 +470,7 @@
     const fparserBtn = field.fparser
       ? ` <span class="fparser-help" tabindex="0" title="Function parser syntax&#10;&#10;Variables: x, y, z` +
         (field.key === 'selectrule' ? `, vx, vy, vz` : '') +
-        `&#10;Constants: ct(1)..ct(16)&#10;&#10;Functions:&#10;  abs, sin, cos, tan, htan (tanh)&#10;  hsec (sech), exp, log, tenlog (log10)&#10;  sqrt, asin, acos, atan, atan2&#10;  pow(a,b), not(a), neg(a)&#10;&#10;Operators: + - * / ^ **&#10;Logic: && || == != >= <= > <&#10;Conditional: if(cond, true, false)">?</span>`
+        `&#10;Constants: ct(1)..ct(16), pi&#10;&#10;Functions:&#10;  abs, sin, cos, tan, htan (tanh)&#10;  hsec (sech), exp, log, tenlog (log10)&#10;  sqrt, asin, acos, atan, atan2&#10;  pow(a,b), not(a), neg(a)&#10;&#10;Operators: + - * / ^ **&#10;Logic: && || == != >= <= > <&#10;Conditional: if(cond, true, false)">?</span>`
       : '';
 
     return `<div class="field-row ${dimClass}">
@@ -1392,7 +1392,9 @@
       s = s.replace(new RegExp('\\b' + fn + '\\b', 'gi'), 'Math.' + fn);
     }
     // Replace pi
-    s = s.replace(/\bpi\b/gi, 'Math.PI');
+    // pi: Fortran fparser does NOT support pi — replace with numeric value
+    // so that preview heatmaps work if a user types pi, but warn via hint
+    s = s.replace(/\bpi\b/gi, '3.14159265358979');
     // Fortran parser uses x, y, z for coordinates — map to x1, x2, x3 params
     // (must come after Math. replacements to avoid mangling e.g. Math.exp)
     s = s.replace(/\bx\b/g, 'x1');
