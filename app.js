@@ -205,6 +205,7 @@
     }
     if (key === 'species') {
       debouncedRenderNspPlot();
+      debouncedRenderVspPlot();
     }
     if (key === 'raw_diag') {
       debouncedRenderSelectrulePlot();
@@ -234,6 +235,7 @@
             renderBFieldPlot();
             renderEFieldPlot();
             debouncedRenderNspPlot();
+            debouncedRenderVspPlot();
             debouncedRenderSelectrulePlot();
           });
         }
@@ -350,6 +352,28 @@
         html += `</span>`;
         html += `</div>`;
         html += `<canvas id="e-field-canvas"></canvas><div id="e-field-plot-msg"></div></div>`;
+      }
+      // Insert vsp velocity plot after the Velocity group in species section
+      if (skey === 'species' && group.title === 'Velocity') {
+        html += `<div id="vsp-plot">`;
+        html += `<div id="vsp-controls">`;
+        html += `<label>Field: <select id="vsp-component">`;
+        html += `<option value="mag" selected>|v|</option>`;
+        html += `<option value="vx">vx</option>`;
+        html += `<option value="vy">vy</option>`;
+        html += `<option value="vz">vz</option>`;
+        html += `</select></label>`;
+        html += ` <span class="plot-3d-controls">`;
+        html += `<label>Slice: <select id="vsp-slice-axis">`;
+        html += `<option value="2" selected>z</option>`;
+        html += `<option value="1">y</option>`;
+        html += `<option value="0">x</option>`;
+        html += `</select></label>`;
+        html += `<input type="range" id="vsp-slice-pos" min="0" max="1" step="0.005" value="0.5">`;
+        html += `<span id="vsp-slice-val"></span>`;
+        html += `</span>`;
+        html += `</div>`;
+        html += `<canvas id="vsp-canvas"></canvas><div id="vsp-plot-msg"></div></div>`;
       }
       // Insert nsp density heatmap after the Density group in species section
       if (skey === 'species' && group.title === 'Density') {
@@ -674,6 +698,33 @@
         });
       }
       debouncedRenderNspPlot();
+
+      // Bind vsp velocity plot controls
+      const vspCompSel = container.querySelector('#vsp-component');
+      if (vspCompSel) {
+        vspCompSel.value = selectedVspComponent;
+        vspCompSel.addEventListener('change', () => {
+          selectedVspComponent = vspCompSel.value;
+          renderVspPlot();
+        });
+      }
+      const vspSliceAxisSel = container.querySelector('#vsp-slice-axis');
+      if (vspSliceAxisSel) {
+        vspSliceAxisSel.value = String(vspSliceAxis);
+        vspSliceAxisSel.addEventListener('change', () => {
+          vspSliceAxis = parseInt(vspSliceAxisSel.value);
+          renderVspPlot();
+        });
+      }
+      const vspSlicePosRange = container.querySelector('#vsp-slice-pos');
+      if (vspSlicePosRange) {
+        vspSlicePosRange.value = String(vspSlicePos);
+        vspSlicePosRange.addEventListener('input', () => {
+          vspSlicePos = parseFloat(vspSlicePosRange.value);
+          renderVspPlot();
+        });
+      }
+      debouncedRenderVspPlot();
     }
   }
 
@@ -911,6 +962,7 @@
           debouncedRenderBFieldPlot();
           debouncedRenderEFieldPlot();
           debouncedRenderNspPlot();
+          debouncedRenderVspPlot();
           debouncedRenderSelectrulePlot();
         }
 
@@ -925,6 +977,11 @@
         // Species: if nsp, nsp_domain, domain_boundary, or ct changed, update density plot
         if (elSection === 'species' && (elKey === 'nsp' || elKey === 'nsp_domain' || elKey === 'domain_boundary' || elKey === 'ct')) {
           debouncedRenderNspPlot();
+        }
+
+        // Species: if vsp, vdrift, or ct changed, update velocity plot
+        if (elSection === 'species' && (elKey === 'vsp' || elKey === 'vdrift' || elKey === 'ct')) {
+          debouncedRenderVspPlot();
         }
 
         // Raw diag: if selectrule or ct changed, update selectrule plot
@@ -2496,6 +2553,341 @@
   function debouncedRenderNspPlot() {
     if (_nspPlotTimer) clearTimeout(_nspPlotTimer);
     _nspPlotTimer = setTimeout(renderNspPlot, 100);
+  }
+
+  // ---- vsp velocity spatial plot ----
+  let selectedVspComponent = 'mag';
+  let vspSliceAxis = 2;
+  let vspSlicePos = 0.5;
+  let _vspPlotTimer = null;
+
+  function renderVspPlot() {
+    const container = document.getElementById('vsp-plot');
+    if (!container) return;
+    const canvas = document.getElementById('vsp-canvas');
+    const msgEl = document.getElementById('vsp-plot-msg');
+    if (!canvas || !msgEl) return;
+
+    const boxsize = state.grid_space?.boxsize || [];
+    const Lx = parseFloat(boxsize[0]) || 1;
+    const Ly = parseFloat(boxsize[1]) || 1;
+    const Lz = parseFloat(boxsize[2]) || 1;
+
+    const spIdx = activeSpeciesIdx['species'] || 0;
+    const speciesData = state.species?.[spIdx];
+    if (!speciesData) return;
+
+    const ctVals = speciesData.ct || [];
+    const vsp = speciesData.vsp || ['', '', ''];
+    const vdrift = speciesData.vdrift || [0, 0, 0];
+
+    // Check if ALL vsp components are empty — uniform velocity
+    const allEmpty = vsp.every(s => !s || !s.trim());
+    if (allEmpty) {
+      canvas.width = 0;
+      canvas.height = 0;
+      const vd = vdrift.map(v => Number(v) || 0);
+      msgEl.textContent = 'Uniform velocity: vdrift = [' + vd.join(', ') + ']';
+      msgEl.style.display = '';
+      const c3d = container.querySelector('.plot-3d-controls');
+      if (c3d) c3d.style.display = 'none';
+      return;
+    }
+
+    // Build expression for each component: if vsp[i] non-empty, use it; else use vdrift[i] constant
+    const compExprs = [];
+    for (let i = 0; i < 3; i++) {
+      const s = (vsp[i] || '').trim();
+      if (s) {
+        compExprs.push(translateExpr(s, ctVals));
+      } else {
+        compExprs.push(String(Number(vdrift[i]) || 0));
+      }
+    }
+
+    // Build an eval function that returns the selected component value at (x1, x2, x3)
+    let evalBody;
+    const comp = selectedVspComponent;
+    if (comp === 'vx') {
+      evalBody = 'return (' + compExprs[0] + ');';
+    } else if (comp === 'vy') {
+      evalBody = 'return (' + compExprs[1] + ');';
+    } else if (comp === 'vz') {
+      evalBody = 'return (' + compExprs[2] + ');';
+    } else {
+      // magnitude
+      evalBody = 'var _vx=(' + compExprs[0] + '),_vy=(' + compExprs[1] + '),_vz=(' + compExprs[2] + '); return Math.sqrt(_vx*_vx+_vy*_vy+_vz*_vz);';
+    }
+
+    const compLabel = comp === 'mag' ? '|v|' : comp;
+
+    if (currentDim === 1) {
+      // --- 1D line plot ---
+      container.style.display = '';
+      const c3d = container.querySelector('.plot-3d-controls');
+      if (c3d) c3d.style.display = 'none';
+
+      const NX = 200;
+      const plotW = 300, plotH = 200;
+      const marginLeft = 50, marginTop = 10, marginBottom = 30, marginRight = 10;
+      const canvasW = marginLeft + plotW + marginRight;
+      const canvasH = marginTop + plotH + marginBottom;
+
+      canvas.width = canvasW;
+      canvas.height = canvasH;
+      canvas.style.width = canvasW + 'px';
+      canvas.style.height = canvasH + 'px';
+
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvasW, canvasH);
+
+      try {
+        const evalFn = new Function('x1', 'x2', 'x3', evalBody);
+        const data = new Float64Array(NX);
+        let vmin = Infinity, vmax = -Infinity;
+        for (let ix = 0; ix < NX; ix++) {
+          const x = Lx * (ix + 0.5) / NX;
+          const val = evalFn(x, 0, 0);
+          data[ix] = val;
+          if (val < vmin) vmin = val;
+          if (val > vmax) vmax = val;
+        }
+        if (!isFinite(vmin)) { vmin = 0; vmax = 1; }
+
+        msgEl.textContent = '';
+        msgEl.style.display = 'none';
+
+        if (vmin === vmax) {
+          if (vmin === 0) { vmin = 0; vmax = 1; }
+          else { const pad = Math.abs(vmin) * 0.1; vmin -= pad; vmax += pad; }
+        }
+        const range = vmax - vmin;
+
+        const fmtVal = (v) => {
+          if (v === 0) return '0';
+          if (Math.abs(v) >= 1000 || Math.abs(v) < 0.01) return v.toExponential(1);
+          return v.toPrecision(3);
+        };
+
+        // Grid lines
+        ctx.strokeStyle = '#21262d';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+          const gx = marginLeft + (plotW * i / 4);
+          ctx.beginPath(); ctx.moveTo(gx, marginTop); ctx.lineTo(gx, marginTop + plotH); ctx.stroke();
+          const gy = marginTop + (plotH * i / 4);
+          ctx.beginPath(); ctx.moveTo(marginLeft, gy); ctx.lineTo(marginLeft + plotW, gy); ctx.stroke();
+        }
+
+        // Axes border
+        ctx.strokeStyle = '#30363d';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(marginLeft, marginTop, plotW, plotH);
+
+        // Draw line
+        ctx.strokeStyle = '#58a6ff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let ix = 0; ix < NX; ix++) {
+          const px = marginLeft + (ix + 0.5) / NX * plotW;
+          const py = marginTop + plotH - ((data[ix] - vmin) / range) * plotH;
+          if (ix === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+
+        // X-axis labels
+        ctx.fillStyle = '#8b949e';
+        ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('x', marginLeft + plotW / 2, canvasH - 2);
+        ctx.textAlign = 'left';
+        ctx.fillText('0', marginLeft, canvasH - 16);
+        ctx.textAlign = 'right';
+        ctx.fillText(Lx % 1 === 0 ? String(Lx) : Lx.toFixed(1), marginLeft + plotW, canvasH - 16);
+
+        // Y-axis labels
+        ctx.save();
+        ctx.translate(10, marginTop + plotH / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = 'center';
+        ctx.fillText(compLabel, 0, 0);
+        ctx.restore();
+        ctx.textAlign = 'right';
+        ctx.fillText(fmtVal(vmin), marginLeft - 4, marginTop + plotH);
+        ctx.fillText(fmtVal(vmax), marginLeft - 4, marginTop + 10);
+
+      } catch (e) {
+        ctx.clearRect(0, 0, canvasW, canvasH);
+        canvas.width = 0;
+        canvas.height = 0;
+        msgEl.textContent = 'Cannot evaluate velocity expression';
+        msgEl.style.display = '';
+      }
+      return;
+    }
+
+    // --- 2D/3D heatmap ---
+    if (currentDim < 2) {
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = '';
+
+    const vspControls3d = container.querySelector('.plot-3d-controls');
+    if (vspControls3d) vspControls3d.style.display = currentDim === 3 ? '' : 'none';
+
+    const axisNames = ['x', 'y', 'z'];
+    const fullL = [Lx, Ly, Lz];
+
+    let hAxisLabel, vAxisLabel, La, Lb;
+    let buildCoords;
+
+    if (currentDim === 3) {
+      const sa = vspSliceAxis;
+      const freeAxes = [0, 1, 2].filter(i => i !== sa);
+      La = fullL[freeAxes[0]]; Lb = fullL[freeAxes[1]];
+      const fixedCoord = vspSlicePos * fullL[sa];
+      hAxisLabel = axisNames[freeAxes[0]];
+      vAxisLabel = axisNames[freeAxes[1]];
+      buildCoords = (a, b) => {
+        const c = [0, 0, 0];
+        c[freeAxes[0]] = a; c[freeAxes[1]] = b; c[sa] = fixedCoord;
+        return c;
+      };
+      const sliceValEl = document.getElementById('vsp-slice-val');
+      if (sliceValEl) sliceValEl.textContent = axisNames[sa] + ' = ' + fixedCoord.toFixed(1);
+    } else {
+      La = Lx; Lb = Ly;
+      hAxisLabel = 'x'; vAxisLabel = 'y';
+      buildCoords = (a, b) => [a, b, 0];
+    }
+
+    const NX = 200, NY = 200;
+    const plotW = 300, plotH = Math.round(plotW * (Lb / La));
+    const barW = 16, barGap = 8, labelW = 50;
+    const marginLeft = 40, marginTop = 10, marginBottom = 30, marginRight = barGap + barW + labelW;
+    const canvasW = marginLeft + plotW + marginRight;
+    const canvasH = marginTop + plotH + marginBottom;
+
+    canvas.width = canvasW;
+    canvas.height = canvasH;
+    canvas.style.width = canvasW + 'px';
+    canvas.style.height = canvasH + 'px';
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvasW, canvasH);
+
+    try {
+      const evalFn = new Function('x1', 'x2', 'x3', evalBody);
+      const vals = new Float64Array(NX * NY);
+      let vmin = Infinity, vmax = -Infinity;
+      for (let ib = 0; ib < NY; ib++) {
+        const b = Lb * (ib + 0.5) / NY;
+        for (let ia = 0; ia < NX; ia++) {
+          const a = La * (ia + 0.5) / NX;
+          const idx = ib * NX + ia;
+          const [cx, cy, cz] = buildCoords(a, b);
+          const val = evalFn(cx, cy, cz);
+          vals[idx] = val;
+          if (val < vmin) vmin = val;
+          if (val > vmax) vmax = val;
+        }
+      }
+      if (!isFinite(vmin)) { vmin = 0; vmax = 1; }
+
+      msgEl.textContent = '';
+      msgEl.style.display = 'none';
+
+      const colorMap = COLORMAPS[selectedColormap] || COLORMAPS.viridis;
+
+      const imgData = ctx.createImageData(NX, NY);
+      const range = vmax - vmin || 1;
+      for (let iy = 0; iy < NY; iy++) {
+        for (let ix = 0; ix < NX; ix++) {
+          const srcIdx = (NY - 1 - iy) * NX + ix;
+          const pxIdx = (iy * NX + ix) * 4;
+          const t = (vals[srcIdx] - vmin) / range;
+          const [r, g, b] = colorMap(t);
+          imgData.data[pxIdx] = r;
+          imgData.data[pxIdx + 1] = g;
+          imgData.data[pxIdx + 2] = b;
+          imgData.data[pxIdx + 3] = 255;
+        }
+      }
+
+      const offscreen = document.createElement('canvas');
+      offscreen.width = NX;
+      offscreen.height = NY;
+      offscreen.getContext('2d').putImageData(imgData, 0, 0);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(offscreen, marginLeft, marginTop, plotW, plotH);
+
+      ctx.strokeStyle = '#30363d';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(marginLeft, marginTop, plotW, plotH);
+
+      ctx.fillStyle = '#8b949e';
+      ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(hAxisLabel, marginLeft + plotW / 2, canvasH - 2);
+      ctx.textAlign = 'left';
+      ctx.fillText('0', marginLeft, canvasH - 16);
+      ctx.textAlign = 'right';
+      ctx.fillText(La % 1 === 0 ? String(La) : La.toFixed(1), marginLeft + plotW, canvasH - 16);
+      ctx.save();
+      ctx.translate(10, marginTop + plotH / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = 'center';
+      ctx.fillText(vAxisLabel, 0, 0);
+      ctx.restore();
+      ctx.textAlign = 'right';
+      ctx.fillText('0', marginLeft - 4, marginTop + plotH);
+      ctx.fillText(Lb % 1 === 0 ? String(Lb) : Lb.toFixed(1), marginLeft - 4, marginTop + 10);
+
+      // Colorbar
+      const barX = marginLeft + plotW + barGap;
+      const barTop = marginTop;
+      const barH = plotH;
+      for (let iy = 0; iy < barH; iy++) {
+        const t = 1 - iy / barH;
+        const [r, g, b] = colorMap(t);
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(barX, barTop + iy, barW, 1);
+      }
+      ctx.strokeStyle = '#30363d';
+      ctx.strokeRect(barX, barTop, barW, barH);
+
+      ctx.fillStyle = '#8b949e';
+      ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'left';
+      const fmtVal = (v) => {
+        if (v === 0) return '0';
+        if (Math.abs(v) >= 1000 || Math.abs(v) < 0.01) return v.toExponential(1);
+        return v.toPrecision(3);
+      };
+      ctx.fillText(fmtVal(vmax), barX + barW + 3, barTop + 9);
+      ctx.fillText(fmtVal(vmin), barX + barW + 3, barTop + barH);
+      const vmid = (vmin + vmax) / 2;
+      ctx.fillText(fmtVal(vmid), barX + barW + 3, barTop + barH / 2 + 4);
+
+      ctx.fillStyle = '#8b949e';
+      ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(compLabel, barX + barW, barTop - 2 > 0 ? barTop - 2 : barTop);
+
+    } catch (e) {
+      ctx.clearRect(0, 0, canvasW, canvasH);
+      canvas.width = 0;
+      canvas.height = 0;
+      msgEl.textContent = 'Cannot evaluate velocity expression';
+      msgEl.style.display = '';
+    }
+  }
+
+  function debouncedRenderVspPlot() {
+    if (_vspPlotTimer) clearTimeout(_vspPlotTimer);
+    _vspPlotTimer = setTimeout(renderVspPlot, 100);
   }
 
   // ---- Selectrule spatial plot ----
