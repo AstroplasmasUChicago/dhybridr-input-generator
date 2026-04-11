@@ -3303,6 +3303,16 @@
     const psStr = data.phasespaces || '';
     const selectedPS = psStr.split(',').map(s => s.trim()).filter(s => s);
 
+    // Fluid moments (vfld / pfld) — always written at full ncells resolution
+    const dmpVfld = Array.isArray(data.dmp_vfld) ? data.dmp_vfld : [false, false];
+    const dmpPfld = Array.isArray(data.dmp_pfld) ? data.dmp_pfld : [false, false];
+    const fieldFlags = [
+      { on: !!dmpVfld[0], name: '|v|',      count: 1 },
+      { on: !!dmpVfld[1], name: 'v\u20d7',  count: 3 },
+      { on: !!dmpPfld[0], name: 'P trace',  count: 1 },
+      { on: !!dmpPfld[1], name: 'P tensor', count: 6 },
+    ].filter(f => f.on);
+
     let panel = container.querySelector('.diag-size-panel');
     if (!panel) {
       panel = document.createElement('div');
@@ -3310,9 +3320,9 @@
       container.appendChild(panel);
     }
 
-    if (selectedPS.length === 0) {
+    if (selectedPS.length === 0 && fieldFlags.length === 0) {
       panel.innerHTML = `<div class="size-panel-header"><span class="size-icon">\ud83d\udcca</span> Estimated Output Size per Dump</div>`
-        + `<div class="size-empty">No phase spaces selected</div>`;
+        + `<div class="size-empty">No phase spaces or fluid moments selected</div>`;
       return;
     }
 
@@ -3328,6 +3338,18 @@
       rows.push({ name: ps, dims: dimsStr, bytes });
     }
 
+    // Fluid moments: each "field" is a full-grid array of ncells cells
+    const gridDims = [];
+    for (let i = 0; i < currentDim; i++) gridDims.push(Number(ncells[i]) || 0);
+    const gridCells = gridDims.reduce((a, b) => a * b, 1);
+    const gridDimsStr = gridDims.join(' \u00d7 ');
+    for (const f of fieldFlags) {
+      const bytes = f.count * gridCells * BYTES_PER_CELL;
+      totalBytes += bytes;
+      const label = f.count > 1 ? `${f.name} (\u00d7${f.count})` : f.name;
+      rows.push({ name: label, dims: gridDimsStr, bytes });
+    }
+
     let html = `<div class="size-panel-header"><span class="size-icon">\ud83d\udcca</span> Estimated Output Size per Dump</div>`;
     for (const row of rows) {
       html += `<div class="size-row">`;
@@ -3335,8 +3357,14 @@
       html += `<span class="size-value">${formatBytes(row.bytes)}</span>`;
       html += `</div>`;
     }
+    const itemCount = selectedPS.length + fieldFlags.length;
+    const itemLabel = selectedPS.length && fieldFlags.length
+      ? `${selectedPS.length} phase spaces + ${fieldFlags.length} fluid moments`
+      : selectedPS.length
+        ? `${selectedPS.length} phase spaces`
+        : `${fieldFlags.length} fluid moments`;
     html += `<div class="size-total">`;
-    html += `<span>Total per dump (${selectedPS.length} phase spaces)</span>`;
+    html += `<span>Total per dump (${itemLabel})</span>`;
     html += `<span class="size-value">${formatBytes(totalBytes)}</span>`;
     html += `</div>`;
     if (numDumps > 0) {
