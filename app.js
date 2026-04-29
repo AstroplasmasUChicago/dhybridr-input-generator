@@ -6,6 +6,7 @@
   let activeSection = 'node_conf';
   let activeSpeciesIdx = {};  // { sectionKey: speciesIndex }
   let lastMeaningfulBoxsize = [0, 0, 0]; // tracks last non-zero boxsize for injector snapping
+  let turbKAuto = true; // when true, ext_force kmin/kmax track boxsize (4π/Lx, 6π/Lx)
 
   // ---- Init ----
   function init() {
@@ -19,7 +20,10 @@
 
     // Render dt formula once KaTeX is ready
     autoUpdateDt();
+    autoUpdateTurbK();
     autoCapXres();
+    renderTurbRampPlot();
+    renderTurbForcePlot();
     if (typeof katex !== 'undefined') {
       updateDtRecommendation();
     } else {
@@ -215,6 +219,13 @@
     if (key === 'field_diag') {
       buildFieldDiagSizePanel();
     }
+    if (key === 'ext_force') {
+      debouncedRenderTurbRampPlot();
+      debouncedRenderTurbForcePlot();
+    }
+    if (key === 'grid_space') {
+      debouncedRenderTurbForcePlot();
+    }
     validateSection(key);
   }
 
@@ -286,6 +297,23 @@
           eSlicePosRange.addEventListener('input', () => {
             eFieldSlicePos = parseFloat(eSlicePosRange.value);
             renderEFieldPlot();
+          });
+        }
+      }
+      // Bind controls for the TURB driving force heatmap
+      if (item === 'ext_force') {
+        const compSel = div.querySelector('#turb-force-component');
+        if (compSel) {
+          compSel.addEventListener('change', () => {
+            selectedTurbForceComponent = compSel.value;
+            renderTurbForcePlot();
+          });
+        }
+        const reseedBtn = div.querySelector('#turb-force-reseed');
+        if (reseedBtn) {
+          reseedBtn.addEventListener('click', () => {
+            turbForceSeedSalt = (turbForceSeedSalt + 1) >>> 0;
+            renderTurbForcePlot();
           });
         }
       }
@@ -395,6 +423,23 @@
         html += `</span>`;
         html += `</div>`;
         html += `<canvas id="nsp-canvas"></canvas><div id="nsp-plot-msg"></div></div>`;
+      }
+      // Insert OU ramp curve plot after ext_force fields
+      if (skey === 'ext_force') {
+        html += `<div id="turb-ramp-plot">`;
+        html += `<canvas id="turb-ramp-canvas"></canvas><div id="turb-ramp-msg"></div></div>`;
+        // 2D driving force field heatmap
+        html += `<div id="turb-force-plot">`;
+        html += `<div id="turb-force-controls">`;
+        html += `<label>Field: <select id="turb-force-component">`;
+        html += `<option value="mag" selected>|F|</option>`;
+        html += `<option value="Fx">Fx</option>`;
+        html += `<option value="Fy">Fy</option>`;
+        html += `<option value="Fz">Fz</option>`;
+        html += `</select></label>`;
+        html += ` <button type="button" id="turb-force-reseed" class="turb-force-reseed-btn">Reseed</button>`;
+        html += `</div>`;
+        html += `<canvas id="turb-force-canvas"></canvas><div id="turb-force-msg"></div></div>`;
       }
       // Insert selectrule spatial plot after raw_diag fields
       if (skey === 'raw_diag') {
@@ -964,6 +1009,16 @@
           autoUpdateDt();
         }
 
+        // ext_force kmin/kmax: user-edit disables auto-tracking with boxsize
+        if (elSection === 'ext_force' && (elKey === 'kmin' || elKey === 'kmax')) {
+          turbKAuto = false;
+        }
+
+        // Cross-section: if boxsize changed and TURB k-shell is auto-tracking, retune
+        if (elSection === 'grid_space' && elKey === 'boxsize' && turbKAuto) {
+          autoUpdateTurbK();
+        }
+
         // Cross-section: if boxsize changed, move injectors that sit at the old edge
         if (elSection === 'grid_space' && elKey === 'boxsize') {
           syncInjectorsToBoxsize(lastMeaningfulBoxsize);
@@ -1000,6 +1055,18 @@
         // Raw diag: if selectrule or ct changed, update selectrule plot
         if (elSection === 'raw_diag' && (elKey === 'selectrule' || elKey === 'ct')) {
           debouncedRenderSelectrulePlot();
+        }
+
+        // ext_force OR time: update OU ramp curve (x-range depends on niter/dt/tend)
+        if (elSection === 'ext_force' ||
+            (elSection === 'time' && (elKey === 'niter' || elKey === 'tend' || elKey === 'dt'))) {
+          debouncedRenderTurbRampPlot();
+        }
+
+        // ext_force or grid_space: update the 2D driving force heatmap
+        if (elSection === 'ext_force' ||
+            (elSection === 'grid_space' && (elKey === 'boxsize' || elKey === 'ncells'))) {
+          debouncedRenderTurbForcePlot();
         }
 
         // Cross-section: if ncells, num_species, or num_par changed, update node optimizer
@@ -1167,6 +1234,8 @@
     updatePreview();
     updateDtRecommendation();
     renderNodeOptimizer();
+    renderTurbRampPlot();
+    renderTurbForcePlot();
   }
 
   function adjustDimArrays(sec, data) {
@@ -1316,6 +1385,20 @@
       dtInput.value = dtStr;
     }
     updatePreview();
+  }
+
+  function autoUpdateTurbK() {
+    if (!state.ext_force) return;
+    const Lx = parseFloat(state.grid_space?.boxsize?.[0]);
+    if (!isFinite(Lx) || Lx <= 0) return;
+    const kmin = 4 * Math.PI / Lx;
+    const kmax = 6 * Math.PI / Lx;
+    state.ext_force.kmin = kmin;
+    state.ext_force.kmax = kmax;
+    const kminInp = document.querySelector('[data-section="ext_force"][data-key="kmin"]');
+    const kmaxInp = document.querySelector('[data-section="ext_force"][data-key="kmax"]');
+    if (kminInp) kminInp.value = kmin.toPrecision(6);
+    if (kmaxInp) kmaxInp.value = kmax.toPrecision(6);
   }
 
   // ---- dt recommendation ----
@@ -1848,6 +1931,577 @@
   function debouncedRenderBFieldPlot() {
     if (_bFieldPlotTimer) clearTimeout(_bFieldPlotTimer);
     _bFieldPlotTimer = setTimeout(renderBFieldPlot, 100);
+  }
+
+  // ---- TURB Langevin antenna OU ramp curve ----
+  // Plots the per-mode RMS amplitude ramp:
+  //   RMS(F_k)(t) / amplitude = sqrt(1 - exp(-2 t / t_decay))
+  // (stationary-variance ramp of the Ornstein-Uhlenbeck process driving each k-mode).
+  function renderTurbRampPlot() {
+    const container = document.getElementById('turb-ramp-plot');
+    if (!container) return;
+    const canvas = document.getElementById('turb-ramp-canvas');
+    const msgEl = document.getElementById('turb-ramp-msg');
+    if (!canvas || !msgEl) return;
+
+    const ext = state.ext_force || {};
+    const ftype = (ext.ftype || '').trim();
+
+    // Hide entirely unless TURB
+    if (ftype !== 'TURB') {
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = '';
+
+    const tDecay = parseFloat(ext.t_decay);
+    const amplitude = parseFloat(ext.amplitude);
+    const frequency = parseFloat(ext.frequency);
+
+    if (!isFinite(tDecay) || tDecay <= 0) {
+      canvas.width = 0;
+      canvas.height = 0;
+      msgEl.style.display = '';
+      msgEl.textContent = 'Set t_decay > 0 to see ramp curve';
+      return;
+    }
+
+    // Determine x-range (simulation end time)
+    const dt = parseFloat(state.time?.dt);
+    const niter = parseFloat(state.time?.niter);
+    const tend = parseFloat(state.time?.tend);
+
+    let tEnd;
+    let tEndSource = '';
+    if (isFinite(niter) && niter > 0 && isFinite(dt) && dt > 0) {
+      tEnd = niter * dt;
+      tEndSource = 'niter*dt';
+    } else if (isFinite(tend) && tend > 0) {
+      tEnd = tend;
+      tEndSource = 'tend';
+    } else {
+      tEnd = 5 * tDecay;
+      tEndSource = '5*t_decay (default)';
+    }
+    if (!isFinite(tEnd) || tEnd <= 0) tEnd = 5 * tDecay;
+
+    // Layout (matches B-field 1D plot conventions)
+    const plotW = 300, plotH = 180;
+    const marginLeft = 50, marginTop = 10, marginBottom = 30, marginRight = 60;
+    const canvasW = marginLeft + plotW + marginRight;
+    const canvasH = marginTop + plotH + marginBottom;
+
+    canvas.width = canvasW;
+    canvas.height = canvasH;
+    canvas.style.width = canvasW + 'px';
+    canvas.style.height = canvasH + 'px';
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvasW, canvasH);
+
+    // Read CSS variables for theming
+    const css = getComputedStyle(document.documentElement);
+    const colorMuted = (css.getPropertyValue('--muted') || '#8b949e').trim();
+    const colorBorder = (css.getPropertyValue('--border') || '#30363d').trim();
+    const colorAccent = (css.getPropertyValue('--accent') || '#58a6ff').trim();
+
+    // Axes / grid
+    ctx.strokeStyle = '#21262d';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const gx = marginLeft + (plotW * i / 4);
+      ctx.beginPath(); ctx.moveTo(gx, marginTop); ctx.lineTo(gx, marginTop + plotH); ctx.stroke();
+      const gy = marginTop + (plotH * i / 4);
+      ctx.beginPath(); ctx.moveTo(marginLeft, gy); ctx.lineTo(marginLeft + plotW, gy); ctx.stroke();
+    }
+    ctx.strokeStyle = colorBorder;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(marginLeft, marginTop, plotW, plotH);
+
+    const xToPx = (t) => marginLeft + (t / tEnd) * plotW;
+    const yToPx = (y) => marginTop + plotH - y * plotH;
+
+    // Asymptote y=1 (dashed)
+    ctx.save();
+    ctx.strokeStyle = colorMuted;
+    ctx.setLineDash([4, 3]);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(marginLeft, yToPx(1));
+    ctx.lineTo(marginLeft + plotW, yToPx(1));
+    ctx.stroke();
+    ctx.restore();
+
+    // Annotation: vertical line at t = t_decay
+    const drawVLine = (t, label, dashed) => {
+      if (t < 0 || t > tEnd) return;
+      const px = xToPx(t);
+      ctx.save();
+      ctx.strokeStyle = colorMuted;
+      ctx.lineWidth = 1;
+      if (dashed) ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(px, marginTop);
+      ctx.lineTo(px, marginTop + plotH);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.save();
+      ctx.fillStyle = colorMuted;
+      ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'left';
+      // Place label just right of the line, near the top
+      const tx = Math.min(px + 3, marginLeft + plotW - 2);
+      ctx.fillText(label, tx, marginTop + 10);
+      ctx.restore();
+    };
+    drawVLine(tDecay, 't_decay', true);
+    if (3 * tDecay <= tEnd) drawVLine(3 * tDecay, '~95% spin-up', true);
+
+    // Ramp curve
+    const NX = 240;
+    ctx.beginPath();
+    ctx.strokeStyle = colorAccent;
+    ctx.lineWidth = 2;
+    for (let i = 0; i <= NX; i++) {
+      const t = tEnd * i / NX;
+      const y = Math.sqrt(Math.max(0, 1 - Math.exp(-2 * t / tDecay)));
+      const px = xToPx(t);
+      const py = yToPx(y);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+
+    // Number formatter
+    const fmtNum = (v) => {
+      if (!isFinite(v)) return String(v);
+      if (v === 0) return '0';
+      const a = Math.abs(v);
+      if (a >= 1000 || a < 0.01) return v.toExponential(1);
+      if (Number.isInteger(v)) return String(v);
+      return v.toPrecision(3);
+    };
+
+    // Axis labels
+    ctx.fillStyle = colorMuted;
+    ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+
+    // X axis ticks (0, tEnd) and label
+    ctx.textAlign = 'left';
+    ctx.fillText('0', marginLeft, canvasH - 16);
+    ctx.textAlign = 'right';
+    ctx.fillText(fmtNum(tEnd), marginLeft + plotW, canvasH - 16);
+    ctx.textAlign = 'center';
+    ctx.fillText('t', marginLeft + plotW / 2, canvasH - 2);
+
+    // Y axis ticks (0, 1) — left side normalized, right side absolute amplitude
+    ctx.textAlign = 'right';
+    ctx.fillText('0', marginLeft - 4, marginTop + plotH);
+    ctx.fillText('1', marginLeft - 4, marginTop + 10);
+    if (isFinite(amplitude) && amplitude !== 0) {
+      ctx.textAlign = 'left';
+      ctx.fillText(fmtNum(amplitude), marginLeft + plotW + 4, marginTop + 10);
+      ctx.fillText('0', marginLeft + plotW + 4, marginTop + plotH);
+    }
+
+    // Y-axis title (rotated)
+    ctx.save();
+    ctx.translate(12, marginTop + plotH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center';
+    ctx.fillText('RMS / amplitude', 0, 0);
+    ctx.restore();
+
+    // Status text below plot
+    const yAtEnd = Math.sqrt(Math.max(0, 1 - Math.exp(-2 * tEnd / tDecay)));
+    const lines = [];
+    if (tEnd < tDecay) {
+      lines.push('Run ends before driver spins up (t_end < t_decay)');
+    } else if (tEnd < 3 * tDecay) {
+      const pct = (yAtEnd * 100).toFixed(0);
+      lines.push('Driver only reaches ' + pct + '% of stationary by run end');
+    } else {
+      lines.push('Driver spun-up in first ~3*t_decay = ' + fmtNum(3 * tDecay) + ' time units');
+    }
+    lines.push('x-range from ' + tEndSource + ' = ' + fmtNum(tEnd));
+    if (isFinite(frequency) && frequency > 0) {
+      const period = 2 * Math.PI / frequency;
+      lines.push('Modes oscillate at omega = ' + fmtNum(frequency) +
+        ' (period = ' + fmtNum(period) + '); envelope shape unchanged.');
+    }
+
+    msgEl.style.display = '';
+    msgEl.innerHTML = lines.map(escapeHtml).join('<br>');
+  }
+
+  let _turbRampPlotTimer = null;
+  function debouncedRenderTurbRampPlot() {
+    if (_turbRampPlotTimer) clearTimeout(_turbRampPlotTimer);
+    _turbRampPlotTimer = setTimeout(renderTurbRampPlot, 100);
+  }
+
+  // ---- TURB driving force field heatmap ----
+  // Renders one stationary OU realization of the Langevin-antenna force field
+  // F(x, y) on a 64x64 preview grid. Mirrors extforce.f90's BuildKModeTable
+  // (mode shell + half-space filter), AdvanceLangevinModes (solenoidal
+  // projection across d=1..DIM), and ComputeTurbForceField (mode sum with the
+  // factor-of-2 conjugate-half-space contribution).
+  let selectedTurbForceComponent = 'mag';
+  let turbForceSeedSalt = 0;
+
+  // Mulberry32 PRNG, returns [0,1)
+  function mulberry32(seed) {
+    let t = seed >>> 0;
+    return function() {
+      t = (t + 0x6D2B79F5) >>> 0;
+      let r = t;
+      r = Math.imul(r ^ (r >>> 15), r | 1);
+      r ^= r + Math.imul(r ^ (r >>> 7), r | 61);
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  // Box-Muller standard normal from a uniform PRNG
+  function gaussianFrom(rng) {
+    let u = 0, v = 0;
+    while (u === 0) u = rng();
+    while (v === 0) v = rng();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  // Cheap deterministic 32-bit hash from numeric inputs
+  function hashSeed(salt, kmin, kmax, nModes, dim) {
+    let h = 0x9E3779B1 ^ ((salt | 0) * 0x85EBCA77);
+    const mix = (x) => {
+      // Convert any finite number into 32 bits via float32 view
+      const buf = new ArrayBuffer(4);
+      new Float32Array(buf)[0] = isFinite(x) ? x : 0;
+      const w = new Uint32Array(buf)[0];
+      h = Math.imul(h ^ w, 0x27D4EB2D) >>> 0;
+      h = (h ^ (h >>> 15)) >>> 0;
+    };
+    mix(kmin); mix(kmax); mix(nModes); mix(dim);
+    return h >>> 0;
+  }
+
+  function renderTurbForcePlot() {
+    const container = document.getElementById('turb-force-plot');
+    if (!container) return;
+    const canvas = document.getElementById('turb-force-canvas');
+    const msgEl = document.getElementById('turb-force-msg');
+    if (!canvas || !msgEl) return;
+
+    const ext = state.ext_force || {};
+    const ftype = (ext.ftype || '').trim();
+
+    if (ftype !== 'TURB') {
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = '';
+
+    // 1D: no 2D preview
+    if (currentDim === 1) {
+      canvas.width = 0;
+      canvas.height = 0;
+      msgEl.style.display = '';
+      msgEl.textContent = '1D mode — no 2D preview';
+      return;
+    }
+
+    const boxsize = state.grid_space?.boxsize || [];
+    const Lx = parseFloat(boxsize[0]);
+    const Ly = parseFloat(boxsize[1]);
+    if (!isFinite(Lx) || Lx <= 0 || !isFinite(Ly) || Ly <= 0) {
+      canvas.width = 0;
+      canvas.height = 0;
+      msgEl.style.display = '';
+      msgEl.textContent = 'Set grid_space.boxsize (Lx, Ly) > 0 to see force preview';
+      return;
+    }
+
+    const kmin = parseFloat(ext.kmin);
+    const kmax = parseFloat(ext.kmax);
+    const amplitude = parseFloat(ext.amplitude);
+    if (!isFinite(kmin) || !isFinite(kmax) || kmin < 0 || kmax <= 0 || kmax < kmin) {
+      canvas.width = 0;
+      canvas.height = 0;
+      msgEl.style.display = '';
+      msgEl.textContent = 'Set ext_force.kmin and kmax (0 ≤ kmin ≤ kmax) to see force preview';
+      return;
+    }
+
+    const ncellsArr = state.grid_space?.ncells || [];
+    const ncells_x = parseInt(ncellsArr[0]) || 0;
+    const ncells_y = parseInt(ncellsArr[1]) || 0;
+
+    // Build mode table (mirror BuildKModeTable). 2D path only: in 3D we render
+    // the kz=0 slice (modes summed at z=0 with iz=0 only) as an honest 2D view.
+    const dkx = (2 * Math.PI) / Lx;
+    const dky = (2 * Math.PI) / Ly;
+    const nmax_x = Math.ceil(kmax / dkx);
+    const nmax_y = Math.ceil(kmax / dky);
+
+    // For 3D we still iterate iz, but restrict to iz=0 so the rendered 2D
+    // plane (z=0) is a faithful slice of one OU draw of the 3D field.
+    // Using only iz=0 modes also ensures the half-space filter in the
+    // (ix==0, iy==0) line keeps just iz>0 modes (none, since iz=0), so the
+    // filter on the (ix, iy) plane matches the 2D version exactly.
+    const modes = [];
+    for (let ix = -nmax_x; ix <= nmax_x; ix++) {
+      for (let iy = -nmax_y; iy <= nmax_y; iy++) {
+        const kx = ix * dkx;
+        const ky = iy * dky;
+        const kmag = Math.sqrt(kx * kx + ky * ky);
+        if (kmag < kmin || kmag > kmax) continue;
+        const inHalf = (ix > 0) || (ix === 0 && iy > 0);
+        if (!inHalf) continue;
+        modes.push({ kx, ky, kmag2: kx * kx + ky * ky });
+      }
+    }
+
+    const nModes = modes.length;
+
+    if (nModes === 0) {
+      canvas.width = 0;
+      canvas.height = 0;
+      msgEl.style.display = '';
+      msgEl.textContent = 'Shell contains no discrete k-modes — widen kmin..kmax or increase boxsize';
+      return;
+    }
+
+    // Stationary OU magnitude is the input `amplitude` (per real-and-imag
+    // pair, scaled by 1/sqrt(2) so that <|amp|^2> = amplitude^2 per component).
+    const ampScale = isFinite(amplitude) ? amplitude : 1.0;
+
+    // Deterministic seeded PRNG so the plot is stable as the user types.
+    const seed = hashSeed(turbForceSeedSalt, kmin, kmax, nModes, currentDim);
+    const rng = mulberry32(seed);
+
+    // Draw amplitudes for VDIM=3 components per mode
+    const ampX_re = new Float64Array(nModes);
+    const ampX_im = new Float64Array(nModes);
+    const ampY_re = new Float64Array(nModes);
+    const ampY_im = new Float64Array(nModes);
+    const ampZ_re = new Float64Array(nModes);
+    const ampZ_im = new Float64Array(nModes);
+
+    const invSqrt2 = 1 / Math.sqrt(2);
+    for (let m = 0; m < nModes; m++) {
+      // x component
+      ampX_re[m] = ampScale * gaussianFrom(rng) * invSqrt2;
+      ampX_im[m] = ampScale * gaussianFrom(rng) * invSqrt2;
+      // y component
+      ampY_re[m] = ampScale * gaussianFrom(rng) * invSqrt2;
+      ampY_im[m] = ampScale * gaussianFrom(rng) * invSqrt2;
+      // z component
+      ampZ_re[m] = ampScale * gaussianFrom(rng) * invSqrt2;
+      ampZ_im[m] = ampScale * gaussianFrom(rng) * invSqrt2;
+
+      // Solenoidal projection in the (kx, ky) plane only (mirrors the Fortran
+      // d=1..DIM loop). The z-component is unchanged (already orthogonal to k).
+      const k2 = modes[m].kmag2;
+      if (k2 > 0) {
+        const kx = modes[m].kx;
+        const ky = modes[m].ky;
+        const proj_re = (ampX_re[m] * kx + ampY_re[m] * ky) / k2;
+        const proj_im = (ampX_im[m] * kx + ampY_im[m] * ky) / k2;
+        ampX_re[m] -= proj_re * kx;
+        ampX_im[m] -= proj_im * kx;
+        ampY_re[m] -= proj_re * ky;
+        ampY_im[m] -= proj_im * ky;
+      }
+    }
+
+    // Mode-sum onto a 64x64 preview grid (cell-centered, like other plots)
+    const NX = 64, NY = 64;
+    const Fx = new Float64Array(NX * NY);
+    const Fy = new Float64Array(NX * NY);
+    const Fz = new Float64Array(NX * NY);
+
+    for (let iy = 0; iy < NY; iy++) {
+      const y = Ly * (iy + 0.5) / NY;
+      for (let ix = 0; ix < NX; ix++) {
+        const x = Lx * (ix + 0.5) / NX;
+        let fx = 0, fy = 0, fz = 0;
+        for (let m = 0; m < nModes; m++) {
+          const phase = modes[m].kx * x + modes[m].ky * y;
+          const cp = Math.cos(phase);
+          const sp = Math.sin(phase);
+          // 2 * Re[amp * exp(i*phase)] = 2*(Re*cos - Im*sin)
+          fx += 2 * (ampX_re[m] * cp - ampX_im[m] * sp);
+          fy += 2 * (ampY_re[m] * cp - ampY_im[m] * sp);
+          fz += 2 * (ampZ_re[m] * cp - ampZ_im[m] * sp);
+        }
+        const idx = iy * NX + ix;
+        Fx[idx] = fx;
+        Fy[idx] = fy;
+        Fz[idx] = fz;
+      }
+    }
+
+    // Build the field for the selected component
+    const comp = selectedTurbForceComponent;
+    const data = new Float64Array(NX * NY);
+    for (let i = 0; i < NX * NY; i++) {
+      let v;
+      if (comp === 'Fx') v = Fx[i];
+      else if (comp === 'Fy') v = Fy[i];
+      else if (comp === 'Fz') v = Fz[i];
+      else v = Math.sqrt(Fx[i] * Fx[i] + Fy[i] * Fy[i] + Fz[i] * Fz[i]);
+      data[i] = v;
+    }
+
+    let dmin = Infinity, dmax = -Infinity;
+    for (let i = 0; i < data.length; i++) {
+      if (data[i] < dmin) dmin = data[i];
+      if (data[i] > dmax) dmax = data[i];
+    }
+
+    // Layout (mirror b-field-plot conventions)
+    const plotW = 300;
+    const plotH = Math.round(plotW * (Ly / Lx));
+    const barW = 16, barGap = 8, labelW = 50;
+    const marginLeft = 40, marginTop = 10, marginBottom = 30, marginRight = barGap + barW + labelW;
+    const canvasW = marginLeft + plotW + marginRight;
+    const canvasH = marginTop + plotH + marginBottom;
+
+    canvas.width = canvasW;
+    canvas.height = canvasH;
+    canvas.style.width = canvasW + 'px';
+    canvas.style.height = canvasH + 'px';
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvasW, canvasH);
+
+    // Diverging colormap for signed components, sequential for |F|.
+    // For diverging, center on 0 and use symmetric range.
+    const isSigned = (comp !== 'mag');
+    let vlo, vhi;
+    if (isSigned) {
+      const absMax = Math.max(Math.abs(dmin), Math.abs(dmax));
+      if (absMax === 0) { vlo = -1; vhi = 1; }
+      else { vlo = -absMax; vhi = absMax; }
+    } else {
+      vlo = 0;
+      vhi = (dmax === 0) ? 1 : dmax;
+    }
+    const range = vhi - vlo || 1;
+
+    // Reuse existing colormap helpers. Diverging -> 'coolwarm', sequential ->
+    // user-selected colormap (falls back to viridis if user picked coolwarm).
+    let colorMap;
+    if (isSigned) {
+      colorMap = COLORMAPS.coolwarm;
+    } else {
+      colorMap = COLORMAPS[selectedColormap] || COLORMAPS.viridis;
+      if (colorMap === COLORMAPS.coolwarm) colorMap = COLORMAPS.viridis;
+    }
+
+    const imgData = ctx.createImageData(NX, NY);
+    for (let iy = 0; iy < NY; iy++) {
+      for (let ix = 0; ix < NX; ix++) {
+        const t = (data[(NY - 1 - iy) * NX + ix] - vlo) / range;
+        const [r, g, b] = colorMap(t);
+        const idx = (iy * NX + ix) * 4;
+        imgData.data[idx] = r;
+        imgData.data[idx + 1] = g;
+        imgData.data[idx + 2] = b;
+        imgData.data[idx + 3] = 255;
+      }
+    }
+
+    const offscreen = document.createElement('canvas');
+    offscreen.width = NX;
+    offscreen.height = NY;
+    offscreen.getContext('2d').putImageData(imgData, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(offscreen, marginLeft, marginTop, plotW, plotH);
+
+    ctx.strokeStyle = '#30363d';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(marginLeft, marginTop, plotW, plotH);
+
+    // Axis labels
+    ctx.fillStyle = '#8b949e';
+    ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('x', marginLeft + plotW / 2, canvasH - 2);
+    ctx.textAlign = 'left';
+    ctx.fillText('0', marginLeft, canvasH - 16);
+    ctx.textAlign = 'right';
+    ctx.fillText(Lx % 1 === 0 ? String(Lx) : Lx.toFixed(1), marginLeft + plotW, canvasH - 16);
+    ctx.save();
+    ctx.translate(10, marginTop + plotH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center';
+    ctx.fillText('y', 0, 0);
+    ctx.restore();
+    ctx.textAlign = 'right';
+    ctx.fillText('0', marginLeft - 4, marginTop + plotH);
+    ctx.fillText(Ly % 1 === 0 ? String(Ly) : Ly.toFixed(1), marginLeft - 4, marginTop + 10);
+
+    // Colorbar
+    const barX = marginLeft + plotW + barGap;
+    const barTop = marginTop;
+    const barH = plotH;
+    for (let iy = 0; iy < barH; iy++) {
+      const t = 1 - iy / barH;
+      const [r, g, b] = colorMap(t);
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(barX, barTop + iy, barW, 1);
+    }
+    ctx.strokeStyle = '#30363d';
+    ctx.strokeRect(barX, barTop, barW, barH);
+
+    ctx.fillStyle = '#8b949e';
+    ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'left';
+    const fmtVal = (v) => {
+      if (v === 0) return '0';
+      if (Math.abs(v) >= 1000 || Math.abs(v) < 0.01) return v.toExponential(1);
+      return v.toPrecision(3);
+    };
+    ctx.fillText(fmtVal(vhi), barX + barW + 3, barTop + 9);
+    ctx.fillText(fmtVal(vlo), barX + barW + 3, barTop + barH);
+    const vmid = (vlo + vhi) / 2;
+    ctx.fillText(fmtVal(vmid), barX + barW + 3, barTop + barH / 2 + 4);
+
+    ctx.fillStyle = '#8b949e';
+    ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'right';
+    const plotLabel = comp === 'mag' ? '|F|' : comp;
+    ctx.fillText(plotLabel, barX + barW, barTop - 2 > 0 ? barTop - 2 : barTop);
+
+    // Status text
+    const fmtNum = (v) => {
+      if (!isFinite(v)) return String(v);
+      if (v === 0) return '0';
+      const a = Math.abs(v);
+      if (a >= 1000 || a < 0.01) return v.toExponential(2);
+      return v.toPrecision(3);
+    };
+    const lines = [];
+    lines.push(nModes + ' k-modes in shell  (dkx = ' + fmtNum(dkx) + ', dky = ' + fmtNum(dky) + ')');
+    let gridNote;
+    if (ncells_x > 0 && ncells_y > 0) {
+      gridNote = 'simulation grid is ' + ncells_x + '×' + ncells_y;
+    } else {
+      gridNote = 'simulation grid not set';
+    }
+    if (currentDim === 3) {
+      lines.push('Showing kz=0 slice on a 64×64 preview grid (' + gridNote + ')');
+      lines.push('full 3D preview not implemented — only iz=0 modes summed at z=0');
+    } else {
+      lines.push('One stationary OU realization on a 64×64 preview grid (' + gridNote + ')');
+    }
+
+    msgEl.style.display = '';
+    msgEl.innerHTML = lines.map(escapeHtml).join('<br>');
+  }
+
+  let _turbForcePlotTimer = null;
+  function debouncedRenderTurbForcePlot() {
+    if (_turbForcePlotTimer) clearTimeout(_turbForcePlotTimer);
+    _turbForcePlotTimer = setTimeout(renderTurbForcePlot, 100);
   }
 
   // ---- |E| magnitude display ----
@@ -3815,7 +4469,12 @@
     for (const [k, s] of Object.entries(SCHEMA)) {
       if (s.perSpecies) rebuildSpeciesTabs(k);
     }
+    const parsedExtF = parsed.ext_force;
+    turbKAuto = !(parsedExtF && (parsedExtF.kmin !== undefined || parsedExtF.kmax !== undefined));
+    if (turbKAuto) autoUpdateTurbK();
     updatePreview();
+    renderTurbRampPlot();
+    renderTurbForcePlot();
   }
 
   // ---- Presets ----
@@ -4041,7 +4700,12 @@
     for (const [k, s] of Object.entries(SCHEMA)) {
       if (s.perSpecies) rebuildSpeciesTabs(k);
     }
+    const presetExtF = preset.values?.ext_force;
+    turbKAuto = !(presetExtF && (presetExtF.kmin !== undefined || presetExtF.kmax !== undefined));
+    if (turbKAuto) autoUpdateTurbK();
     updatePreview();
+    renderTurbRampPlot();
+    renderTurbForcePlot();
     toast(`Loaded preset: ${preset.name}`);
   }
 

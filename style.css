@@ -410,6 +410,62 @@ header h1 { font-size: 18px; font-weight: 600; }
   border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px;
 }
 
+/* TURB Langevin antenna OU ramp curve */
+#turb-ramp-plot {
+  padding: 8px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+#turb-ramp-canvas {
+  border-radius: 4px;
+  max-width: 100%;
+  height: auto;
+}
+#turb-ramp-msg {
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+  line-height: 1.5;
+}
+
+/* TURB driving force field heatmap */
+#turb-force-plot {
+  padding: 8px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+#turb-force-canvas {
+  border-radius: 4px;
+  max-width: 100%;
+  height: auto;
+}
+#turb-force-controls {
+  font-size: 12px; color: var(--muted);
+  display: inline-flex; align-items: center; gap: 8px;
+}
+#turb-force-controls select {
+  font-size: 12px; background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px;
+}
+.turb-force-reseed-btn {
+  font-size: 12px; background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 2px 8px; cursor: pointer;
+}
+.turb-force-reseed-btn:hover {
+  background: var(--border);
+}
+#turb-force-msg {
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+  line-height: 1.5;
+}
+
 /* 3D slice controls */
 .plot-3d-controls {
   display: inline-flex; align-items: center; gap: 6px;
