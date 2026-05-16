@@ -415,7 +415,7 @@
         html += `<option value="Ey">Ey</option>`;
         html += `<option value="Ez">Ez</option>`;
         html += `</select></label>`;
-        html += ` <span class="plot-3d-controls">`;
+        html += ` <span class="plot-3d-controls"${currentDim === 3 ? '' : ' style="display:none"'}>`;
         html += `<label>Slice: <select id="e-field-slice-axis">`;
         html += `<option value="2" selected>z</option>`;
         html += `<option value="1">y</option>`;
@@ -437,7 +437,7 @@
         html += `<option value="vy">vy</option>`;
         html += `<option value="vz">vz</option>`;
         html += `</select></label>`;
-        html += ` <span class="plot-3d-controls">`;
+        html += ` <span class="plot-3d-controls"${currentDim === 3 ? '' : ' style="display:none"'}>`;
         html += `<label>Slice: <select id="vsp-slice-axis">`;
         html += `<option value="2" selected>z</option>`;
         html += `<option value="1">y</option>`;
@@ -453,7 +453,7 @@
       if (skey === 'species' && group.title === 'Density') {
         html += `<div id="nsp-plot">`;
         html += `<div id="nsp-controls" style="font-size:12px;color:var(--muted);">`;
-        html += `<span class="plot-3d-controls">`;
+        html += `<span class="plot-3d-controls"${currentDim === 3 ? '' : ' style="display:none"'}>`;
         html += `<label>Slice: <select id="nsp-slice-axis">`;
         html += `<option value="2" selected>z</option>`;
         html += `<option value="1">y</option>`;
@@ -486,7 +486,7 @@
       if (skey === 'raw_diag') {
         html += `<div id="selectrule-plot">`;
         html += `<div id="selectrule-controls">`;
-        html += `<span class="plot-3d-controls">`;
+        html += `<span class="plot-3d-controls"${currentDim === 3 ? '' : ' style="display:none"'}>`;
         html += `<label>Slice: <select id="selectrule-slice-axis">`;
         html += `<option value="2" selected>z</option>`;
         html += `<option value="1">y</option>`;
@@ -532,7 +532,7 @@
         html += `<option value="inferno">Inferno</option>`;
         html += `<option value="grayscale">Grayscale</option>`;
         html += `</select></label>`;
-        html += ` <span class="plot-3d-controls">`;
+        html += ` <span class="plot-3d-controls"${currentDim === 3 ? '' : ' style="display:none"'}>`;
         html += `<label>Slice: <select id="b-field-slice-axis">`;
         html += `<option value="2" selected>z</option>`;
         html += `<option value="1">y</option>`;
