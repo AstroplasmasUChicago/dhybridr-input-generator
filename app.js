@@ -428,7 +428,7 @@
         html += `<canvas id="e-field-canvas"></canvas><div id="e-field-plot-msg"></div></div>`;
       }
       // Insert vsp velocity plot after the Velocity group in species section
-      if (skey === 'species' && group.title === 'Velocity') {
+      if (skey === 'species' && group.title.startsWith('Velocity')) {
         html += `<div id="vsp-plot">`;
         html += `<div id="vsp-controls">`;
         html += `<label>Field: <select id="vsp-component">`;
@@ -586,7 +586,7 @@
 
     const fparserBtn = field.fparser
       ? ` <span class="fparser-help" tabindex="0" title="Function parser syntax&#10;&#10;Variables: x, y, z` +
-        (field.key === 'selectrule' ? `, vx, vy, vz` : '') +
+        (field.key === 'selectrule' ? `, vx, vy, vz (v)` : '') +
         `&#10;Constants: ct(1)..ct(16), pi&#10;&#10;Functions:&#10;  abs, sin, cos, tan, htan (tanh)&#10;  hsec (sech), exp, log, tenlog (log10)&#10;  sqrt, asin, acos, atan, atan2&#10;  pow(a,b), not(a), neg(a)&#10;&#10;Operators: + - * / ^ **&#10;Logic: && || == != >= <= > <&#10;Conditional: if(cond, true, false)">?</span>`
       : '';
 
@@ -3357,7 +3357,7 @@
       canvas.width = 0;
       canvas.height = 0;
       const vd = vdrift.map(v => Number(v) || 0);
-      msgEl.textContent = 'Uniform velocity: vdrift = [' + vd.join(', ') + ']';
+      msgEl.textContent = 'Uniform velocity (γ*v): vdrift = [' + vd.join(', ') + ']';
       msgEl.style.display = '';
       const c3d = container.querySelector('.plot-3d-controls');
       if (c3d) c3d.style.display = 'none';
@@ -3491,7 +3491,7 @@
         ctx.clearRect(0, 0, canvasW, canvasH);
         canvas.width = 0;
         canvas.height = 0;
-        msgEl.textContent = 'Cannot evaluate velocity expression';
+        msgEl.textContent = 'Cannot evaluate velocity (γ*v) expression';
         msgEl.style.display = '';
       }
       return;
