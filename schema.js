@@ -191,6 +191,7 @@ const SCHEMA = {
     required: true,
     fields: [
       { key: 'num_species', label: 'num_species', type: 'int', dim: 0, default: 1, hint: 'Number of ion species (\u22651)', min: 1, max: 10 },
+      { key: 'xnmin', label: 'xnmin', type: 'real', dim: 0, default: 0.0, hint: 'TODO' },  // AUTO-ADDED BY schema-sync — review hint/groups
     ]
   },
 
@@ -236,6 +237,8 @@ const SCHEMA = {
       { key: 'ct', label: 'ct', type: 'real', dim: 16, default: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], hint: 'User constants ct(1) through ct(16), referenced in nsp/nsp_domain/vsp expressions', advanced: true },
       { key: 'follow', label: 'follow', type: 'bool', dim: 0, default: false, hint: 'Follow/tag particles' },
       { key: 'chk_dup', label: 'chk_dup', type: 'bool', dim: 0, default: false, hint: 'Check for duplicate particles' },
+      { key: 'chk_mpi_balance', label: 'chk_mpi_balance', type: 'bool', dim: 0, default: false, hint: 'TODO' },  // AUTO-ADDED BY schema-sync — review hint/groups
+      { key: 'chk_test_boundaries', label: 'chk_test_boundaries', type: 'bool', dim: 0, default: false, hint: 'TODO' },  // AUTO-ADDED BY schema-sync — review hint/groups
     ]
   },
 
