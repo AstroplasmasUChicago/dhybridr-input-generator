@@ -158,16 +158,16 @@ const SCHEMA = {
   algorithm: {
     namelist: 'nl_algorithm',
     label: 'Algorithm',
-    desc: 'Numerical algorithm settings. Some values are overridden internally.',
+    desc: 'Numerical algorithm settings.',
     required: false,
     fields: [
-      { key: 'ifsmooth', label: 'ifsmooth', type: 'bool', dim: 0, default: true, hint: 'Smooth fields (overridden to .true.)' },
-      { key: 'ifsmoothextfields', label: 'ifsmoothextfields', type: 'bool', dim: 0, default: true, hint: 'Smooth external fields' },
-      { key: 'ifsmoothfields', label: 'ifsmoothfields', type: 'bool', dim: 0, default: true, hint: 'Smooth self-consistent fields' },
+      { key: 'ifsmooth', label: 'ifsmooth', type: 'bool', dim: 0, default: true, hint: 'Master smoothing switch (gates all Smooth() calls)' },
+      { key: 'ifsmoothextfields', label: 'ifsmoothextfields', type: 'bool', dim: 0, default: true, hint: 'Smooth external/analytic fields at init' },
+      { key: 'ifsmoothfields', label: 'ifsmoothfields', type: 'bool', dim: 0, default: true, hint: 'Smooth E/B inside per-step field solver' },
       { key: 'filternpass', label: 'filternpass', type: 'int', dim: 0, default: 6, hint: 'Filter passes' },
-      { key: 'compensate', label: 'compensate', type: 'bool', dim: 0, default: false, hint: 'Compensating filter (overridden to .false.)' },
-      { key: 'subniter', label: 'subniter', type: 'int', dim: 0, default: 8, hint: 'Sub-iterations (overridden to 8)' },
-      { key: 'allowederror', label: 'allowederror', type: 'real', dim: 0, default: 1.0, hint: 'Allowed error (overridden to 1.0)' },
+      { key: 'compensate', label: 'compensate', type: 'bool', dim: 0, default: false, hint: 'Use 5-point compensating filter instead of 3-point binomial' },
+      { key: 'subniter', label: 'subniter', type: 'int', dim: 0, default: 8, hint: 'Sub-iterations for the field solver' },
+      { key: 'allowederror', label: 'allowederror', type: 'real', dim: 0, default: 1.0, hint: 'Field-solver convergence threshold (sub-iter exit)' },
       { key: 'resistivity', label: 'resistivity', type: 'real', dim: 0, default: 0, hint: 'Resistivity' },
     ]
   },
