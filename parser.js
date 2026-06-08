@@ -41,13 +41,18 @@ function parseInputFile(text) {
   result._dim = detectedDim || 2;
 
   // Detect build target from the deck. gpu_mem_frac (nl_particles) is GPU-only;
-  // spare_size (nl_species) is CPU-only. They are mutually exclusive in a valid
-  // deck, so either one pins the build. Leave null if neither appears (the caller
-  // keeps the current selection).
+  // a non-negative spare_size (nl_species) is CPU-only. They are mutually exclusive
+  // in a valid deck, so either one pins the build. Leave null if neither appears
+  // (the caller keeps the current selection).
   // Match an actual `key =` assignment, ignoring `!` comments (a hint comment may
   // name the other build's knob, e.g. gpu_mem_frac's comment mentions spare_size).
   const stripComments = (body) => body.split('\n').map(l => l.replace(/!.*$/, '')).join('\n');
   const assigns = (body, key) => new RegExp('(^|[^a-z_])' + key + '\\s*=', 'i').test(stripComments(body));
+  // First numeric value assigned to `key` in a section body (null if absent/non-numeric).
+  const assignedNumber = (body, key) => {
+    const m = stripComments(body).match(new RegExp('(?:^|[^a-z_])' + key + '\\s*=\\s*([-+0-9.eEdD]+)', 'i'));
+    return m ? Number(m[1].replace(/d/gi, 'e')) : null;
+  };
   let detectedBuild = null;
   for (const sec of sections) {
     if (sec.name === 'particles' && assigns(sec.body, 'gpu_mem_frac')) {
@@ -58,7 +63,12 @@ function parseInputFile(text) {
   if (!detectedBuild) {
     for (const sec of sections) {
       if (sec.name === 'species' && assigns(sec.body, 'spare_size')) {
-        detectedBuild = 'CPU';
+        // spare_size is the CPU-only headroom knob. Legacy GPU decks used the now-dead
+        // sentinel spare_size=-1 ("GPU auto-tune"), so a negative value marks a legacy
+        // GPU deck, not a CPU one: the current GPU build rejects spare_size as an unknown
+        // namelist key, and the CPU build aborts on spare_size<0. Only spare_size>=0 pins CPU.
+        const s = assignedNumber(sec.body, 'spare_size');
+        detectedBuild = (s !== null && s < 0) ? 'GPU' : 'CPU';
         break;
       }
     }
@@ -172,7 +182,13 @@ function parseNamelistBody(body, schema, dim) {
       } else if (field.type === 'int') {
         data[field.key] = parseInt(rawVal) || 0;
       } else {
-        data[field.key] = Number(rawVal.replace(/d/gi, 'e')) || 0;
+        const num = Number(rawVal.replace(/d/gi, 'e')) || 0;
+        // Drop a negative spare_size: it is the dead legacy "GPU auto-tune" sentinel
+        // (spare_size=-1), invalid in both current builds. Leaving it unset lets the
+        // schema default (0.2) apply, so the generator never round-trips spare_size=-1.
+        if (!(field.key === 'spare_size' && num < 0)) {
+          data[field.key] = num;
+        }
       }
     }
   }
