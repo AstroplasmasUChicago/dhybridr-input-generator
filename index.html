@@ -20,14 +20,20 @@
         <input type="text" id="param-search" placeholder="Search parameters..." autocomplete="off">
         <div id="search-dropdown" class="search-dropdown hidden"></div>
       </div>
-      <label class="dim-select">
+      <div class="dim-select build-select">
+        <span>Build:</span>
+        <div class="custom-select" id="build-select">
+          <button type="button" class="cs-button" aria-haspopup="listbox" aria-expanded="false"></button>
+          <ul class="cs-list" role="listbox"></ul>
+        </div>
+      </div>
+      <div class="dim-select">
         <span>Dimensions:</span>
-        <select id="dim-select">
-          <option value="1">1D</option>
-          <option value="2" selected>2D</option>
-          <option value="3">3D</option>
-        </select>
-      </label>
+        <div class="custom-select" id="dim-select">
+          <button type="button" class="cs-button" aria-haspopup="listbox" aria-expanded="false"></button>
+          <ul class="cs-list" role="listbox"></ul>
+        </div>
+      </div>
       <div class="header-buttons">
         <button id="btn-load" title="Load input file">📂 Load</button>
         <button id="btn-preset" title="Load preset">📋 Preset</button>

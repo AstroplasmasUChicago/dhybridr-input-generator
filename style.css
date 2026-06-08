@@ -59,11 +59,34 @@ header h1 { font-size: 18px; font-weight: 600; }
 }
 .dim-select { display: flex; align-items: center; gap: 8px; }
 .dim-select span { color: var(--muted); font-size: 13px; }
-.dim-select select {
+/* Custom dropdown (replaces native <select> whose popup mis-positions in webviews) */
+.custom-select { position: relative; display: inline-block; }
+.cs-button {
+  display: inline-flex; align-items: center; gap: 8px;
   background: var(--input-bg); color: var(--accent); border: 1px solid var(--border);
   border-radius: 6px; padding: 6px 12px; font-size: 14px; font-weight: 600;
-  cursor: pointer;
+  cursor: pointer; font-family: inherit;
 }
+.cs-button:hover { border-color: var(--accent); }
+/* Native-style dropdown caret (drawn so textContent stays just the label) */
+.cs-button::after {
+  content: ''; flex-shrink: 0;
+  border-left: 4px solid transparent; border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
+}
+.cs-list {
+  position: absolute; top: calc(100% + 4px); left: 0; min-width: 100%;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  list-style: none; padding: 4px; margin: 0; z-index: 300; display: none;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.custom-select.open .cs-list { display: block; }
+.cs-option {
+  padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 14px;
+  color: var(--text); white-space: nowrap;
+}
+.cs-option:hover { background: var(--hover); }
+.cs-option.selected { color: var(--accent); font-weight: 600; }
 .header-buttons { display: flex; gap: 8px; }
 .header-buttons button, #btn-copy {
   background: var(--surface); color: var(--text); border: 1px solid var(--border);
@@ -153,6 +176,17 @@ header h1 { font-size: 18px; font-weight: 600; }
   opacity: 0.4; pointer-events: none; user-select: none;
 }
 
+/* Build-locked section (e.g. Load Balancing on GPU builds): dimmed like a
+   disabled section, with an explanatory banner that stays readable. */
+.build-lock-row {
+  margin-bottom: 16px; padding: 10px 14px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; font-size: 12px; color: var(--muted);
+}
+.section-build-locked .section-body {
+  opacity: 0.4; pointer-events: none; user-select: none;
+}
+
 /* Per-species enable toggle (multi-per-species sections: e.g. plasma_injector) */
 .section-all-species-disabled h2 .tag.disabled-tag { display: inline; }
 .species-enable-toggle { margin-bottom: 8px; }
@@ -219,6 +253,10 @@ header h1 { font-size: 18px; font-weight: 600; }
   padding: 8px 14px; color: var(--muted); background: var(--hover);
   border-bottom: 1px solid var(--border); font-weight: 600;
 }
+.field-group-desc {
+  font-size: 11px; color: var(--muted); line-height: 1.5;
+  padding: 8px 14px; border-bottom: 1px solid var(--border);
+}
 .field-row {
   display: grid; grid-template-columns: 200px 1fr; gap: 12px;
   padding: 8px 14px; align-items: start; border-bottom: 1px solid var(--border);
@@ -242,13 +280,23 @@ header h1 { font-size: 18px; font-weight: 600; }
 .array-inputs { display: flex; gap: 6px; flex-wrap: wrap; }
 .array-inputs input { width: 80px; text-align: center; }
 .array-inputs .label { font-size: 11px; color: var(--muted); text-align: center; }
-.array-col { display: flex; flex-direction: column; gap: 2px; align-items: center; }
+/* Bottom-align the input/checkbox so columns line up even when one label is
+   taller (e.g. a vector-arrow label like v⃗ vs |v|). The row stretches all
+   columns to equal height, so flex-end puts every input on the same baseline. */
+.array-col { display: flex; flex-direction: column; gap: 2px; align-items: center; justify-content: flex-end; }
 .field-input .checkbox-row {
   display: flex; align-items: center; gap: 8px; padding: 4px 0;
 }
 .field-input .checkbox-row input[type=checkbox] {
   width: 16px; height: 16px; accent-color: var(--accent);
 }
+.field-input input:disabled, .field-input select:disabled,
+.field-input textarea:disabled, .field-input .checkbox-row input:disabled {
+  opacity: 0.5; cursor: not-allowed;
+}
+/* Field pinned to a hardcoded value (e.g. ifsmooth/compensate): dim the label;
+   the disabled control above already dims, and the hint explains why. */
+.field-row-locked .field-label .name { opacity: 0.55; }
 .dim-hidden { display: none !important; }
 
 /* Phase space checkbox grid */

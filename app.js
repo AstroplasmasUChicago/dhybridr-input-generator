@@ -2,6 +2,8 @@
 
 (function() {
   let currentDim = 2;
+  let currentBuild = 'CPU';  // 'CPU' or 'GPU': gates build-specific fields (gpu_mem_frac vs spare_size)
+  let dimDropdown = null, buildDropdown = null;  // header custom dropdowns (see createDropdown)
   let state = {};       // { sectionKey: { field: value } } or { sectionKey: [ {field:value}, ... ] } for perSpecies
   let activeSection = 'node_conf';
   let activeSpeciesIdx = {};  // { sectionKey: speciesIndex }
@@ -30,7 +32,10 @@
       document.querySelector('script[src*="katex"]')?.addEventListener('load', () => updateDtRecommendation());
     }
 
-    document.getElementById('dim-select').addEventListener('change', onDimChange);
+    buildDropdown = createDropdown('build-select',
+      [{ value: 'CPU', label: 'CPU' }, { value: 'GPU', label: 'GPU' }], currentBuild, onBuildChange);
+    dimDropdown = createDropdown('dim-select',
+      [{ value: '1', label: '1D' }, { value: '2', label: '2D' }, { value: '3', label: '3D' }], String(currentDim), onDimChange);
 
     // Mobile menu
     const sidebar = document.getElementById('sidebar');
@@ -239,6 +244,8 @@
       const sec = SCHEMA[item];
       const div = document.createElement('div');
       div.className = 'section';
+      // Dim the whole section on a build that locks it (e.g. Load Balancing on GPU).
+      if (sec.buildLock && sec.buildLock[currentBuild]) div.classList.add('section-build-locked');
       div.dataset.section = item;
       div.innerHTML = buildSectionHTML(item, sec);
       container.appendChild(div);
@@ -341,6 +348,12 @@
       html += `</div>`;
     }
 
+    // Build-lock banner (e.g. Load Balancing on GPU): explains why the section
+    // is dimmed; rendered outside the section-body so it stays full-opacity.
+    if (sec.buildLock && sec.buildLock[currentBuild]) {
+      html += `<div class="build-lock-row">${sec.buildLock[currentBuild]}</div>`;
+    }
+
     html += `<div class="section-body" data-section="${skey}">`;
     html += `<div class="validation-msg" data-section="${skey}"></div>`;
     if (sec.perSpecies) {
@@ -398,9 +411,14 @@
       if (group.title) {
         html += `<div class="field-group-title">${group.title}</div>`;
       }
+      if (group.desc) {
+        html += `<div class="field-group-desc">${group.desc}</div>`;
+      }
       for (const fkey of group.keys) {
         const field = sec.fields.find(f => f.key === fkey);
         if (!field) continue;
+        // Build-specific fields only render for the matching build target.
+        if (field.build && field.build !== currentBuild) continue;
         html += buildFieldRow(skey, field, speciesIdx);
       }
       html += `</div>`;
@@ -555,17 +573,27 @@
     const arrSize = getArraySize(field.dim, currentDim);
     const dimClass = getDimVisibilityClass(field);
 
+    // A field can be pinned to a fixed value: per-build (buildOverride, e.g.
+    // loadbalance off on GPU) or always (locked, e.g. ifsmooth/compensate are
+    // hardcoded in the solver). A pinned control shows the value but is disabled.
+    const hasOverride = field.buildOverride && field.buildOverride[currentBuild] !== undefined;
+    const forcedVal = hasOverride ? field.buildOverride[currentBuild]
+                    : (field.locked ? field.default : undefined);
+    const isLocked = forcedVal !== undefined;
+    const lockAttr = isLocked ? ' disabled' : '';
+
     let inputHTML = '';
 
     if (arrSize > 0 && field.type !== 'str') {
       inputHTML = buildArrayInput(skey, field, arrSize, speciesIdx);
     } else if (field.type === 'bool' && arrSize === 0) {
+      const checkedAttr = isLocked && forcedVal ? ' checked' : '';
       inputHTML = `<div class="checkbox-row">
-        <input type="checkbox" ${dataAttr}>
+        <input type="checkbox" ${dataAttr}${checkedAttr}${lockAttr}>
         <span>${field.hint || ''}</span>
       </div>`;
     } else if (field.options && field.type !== 'strarr') {
-      inputHTML = `<select ${dataAttr}>`;
+      inputHTML = `<select ${dataAttr}${lockAttr}>`;
       for (const opt of field.options) {
         inputHTML += `<option value="${opt}">${opt}</option>`;
       }
@@ -573,11 +601,12 @@
     } else if (field.phaseCheckboxes) {
       inputHTML = buildPhaseCheckboxes(skey, field, speciesIdx);
     } else if (field.textarea) {
-      inputHTML = `<textarea ${dataAttr} rows="2" placeholder="${field.hint || ''}"></textarea>`;
+      inputHTML = `<textarea ${dataAttr} rows="2" placeholder="${field.hint || ''}"${lockAttr}></textarea>`;
     } else {
       const extra = field.type === 'int' ? ' inputmode="numeric" class="int-field"' : '';
-      inputHTML = `<input type="text" ${dataAttr}${extra} placeholder="${field.default ?? ''}">`;
+      inputHTML = `<input type="text" ${dataAttr}${extra} placeholder="${field.default ?? ''}"${lockAttr}>`;
     }
+
 
     let extraHTML = '';
     if (skey === 'time' && field.key === 'dt') {
@@ -590,7 +619,7 @@
         `&#10;Constants: ct(1)..ct(16), pi&#10;&#10;Functions:&#10;  abs, sin, cos, tan, htan (tanh)&#10;  hsec (sech), exp, log, tenlog (log10)&#10;  sqrt, asin, acos, atan, atan2&#10;  pow(a,b), not(a), neg(a)&#10;&#10;Operators: + - * / ^ **&#10;Logic: && || == != >= <= > <&#10;Conditional: if(cond, true, false)">?</span>`
       : '';
 
-    return `<div class="field-row ${dimClass}">
+    return `<div class="field-row ${dimClass}${field.locked ? ' field-row-locked' : ''}">
       <div class="field-label">
         <span class="name">${field.label}${fparserBtn}</span>
         <span class="hint">${field.hint || ''}</span>
@@ -1189,6 +1218,8 @@
           validateSection('raw_diag'); // raw_ndump vs ndump
         }
         if (elSection === 'raw_diag') validateSection('raw_diag');
+        if (elSection === 'particles') validateSection('particles');
+        if (elSection === 'species') validateSection('species');
       };
 
       el.addEventListener('input', onChange);
@@ -1265,7 +1296,14 @@
     applyEnabledState(skey);
 
     for (const field of sec.fields) {
-      const val = data[field.key];
+      let val = data[field.key];
+      // A pinned value (buildOverride per build, or locked always) wins over state
+      // so the disabled control displays the value that will actually be emitted.
+      if (field.buildOverride && field.buildOverride[currentBuild] !== undefined) {
+        val = field.buildOverride[currentBuild];
+      } else if (field.locked) {
+        val = field.default;
+      }
       if (val === undefined) continue;
 
       const selector = speciesIdx !== undefined
@@ -1306,8 +1344,8 @@
   }
 
   // ---- Dimension change ----
-  function onDimChange(e) {
-    currentDim = parseInt(e.target.value);
+  function onDimChange(value) {
+    currentDim = parseInt(value);
     // Update DIM-dependent array sizes in state
     for (const [key, sec] of Object.entries(SCHEMA)) {
       if (sec.multiPerSpecies) {
@@ -1339,6 +1377,62 @@
     renderNodeOptimizer();
     renderTurbRampPlot();
     renderTurbForcePlot();
+  }
+
+  function onBuildChange(value) {
+    currentBuild = value;
+    // Build target only changes which build-specific fields are shown/emitted
+    // (gpu_mem_frac vs spare_size); no array resizing needed. Rebuild the DOM so
+    // those fields appear/disappear, then repaint.
+    buildSections();
+    loadStateToUI();
+    setActiveSection(activeSection);
+    updatePreview();
+  }
+
+  // Custom dropdown. Native <select> popups misposition in some embedded/webview
+  // renderers (e.g. in-IDE browsers), so the header selectors use a CSS-positioned
+  // list we anchor ourselves. Returns { getValue, setValue }; setValue does not
+  // fire onChange (used for programmatic updates from file load / presets).
+  function createDropdown(rootId, options, initial, onChange) {
+    const root = document.getElementById(rootId);
+    if (!root) return null;
+    const button = root.querySelector('.cs-button');
+    const list = root.querySelector('.cs-list');
+    let value = initial;
+
+    const close = () => { root.classList.remove('open'); button.setAttribute('aria-expanded', 'false'); };
+    const open = () => { root.classList.add('open'); button.setAttribute('aria-expanded', 'true'); };
+
+    function render() {
+      const sel = options.find(o => o.value === value) || options[0];
+      button.textContent = sel ? sel.label : '';
+      list.innerHTML = '';
+      for (const o of options) {
+        const li = document.createElement('li');
+        li.className = 'cs-option' + (o.value === value ? ' selected' : '');
+        li.setAttribute('role', 'option');
+        li.textContent = o.label;
+        li.addEventListener('click', () => {
+          const changed = value !== o.value;
+          value = o.value;
+          render();
+          close();
+          if (changed) onChange(value);
+        });
+        list.appendChild(li);
+      }
+    }
+
+    button.addEventListener('click', () => {
+      root.classList.contains('open') ? close() : open();
+    });
+    // Click outside (or on another dropdown) closes this one; Escape closes it.
+    document.addEventListener('click', (e) => { if (!root.contains(e.target)) close(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+
+    render();
+    return { getValue: () => value, setValue: (v) => { value = v; render(); } };
   }
 
   function adjustDimArrays(sec, data) {
@@ -4385,6 +4479,27 @@
       if (adaptiveDt && rawNdumpSet && !rawTdumpSet) warnings.push('adaptive_dt is on — use raw_tdump instead of raw_ndump');
     }
 
+    // GPU-only: the GPU build aborts at init if gpu_mem_frac is outside (0, 1].
+    if (skey === 'particles' && currentBuild === 'GPU') {
+      const raw = state.particles?.gpu_mem_frac;
+      const g = parseFloat(raw);
+      if (isNaN(g) || g <= 0 || g > 1) {
+        warnings.push(`gpu_mem_frac = ${raw}: must be in (0, 1] (the GPU build aborts otherwise)`);
+      }
+    }
+
+    // CPU-only: the CPU build aborts at init if any species has spare_size < 0.
+    if (skey === 'species' && currentBuild === 'CPU') {
+      const specs = state.species || [];
+      for (let i = 0; i < specs.length; i++) {
+        const raw = specs[i]?.spare_size;
+        const s = parseFloat(raw);
+        if (isNaN(s) || s < 0) {
+          warnings.push(`Species ${i+1}: spare_size = ${raw}: must be >= 0 (the CPU build aborts otherwise)`);
+        }
+      }
+    }
+
     msgEl.innerHTML = warnings.map(w => `<div class="validation-warn">\u26a0 ${w}</div>`).join('');
   }
 
@@ -4495,13 +4610,13 @@
 
   // ---- Preview ----
   function updatePreview() {
-    const text = generateInputFile(state, currentDim);
+    const text = generateInputFile(state, currentDim, currentBuild);
     document.getElementById('preview-text').textContent = text;
   }
 
   // ---- Actions ----
   function onGenerate() {
-    const text = generateInputFile(state, currentDim);
+    const text = generateInputFile(state, currentDim, currentBuild);
     const blob = new Blob([text], { type: 'text/plain' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -4536,7 +4651,16 @@
   function applyParsedState(parsed) {
     if (parsed._dim) {
       currentDim = parsed._dim;
-      document.getElementById('dim-select').value = currentDim;
+      dimDropdown?.setValue(String(currentDim));
+    }
+    // Switch build target to match the loaded deck (gpu_mem_frac => GPU,
+    // spare_size => CPU). If the file had neither, keep the current selection
+    // but warn, since the preview may then be wrong for the loaded file.
+    if (parsed._build) {
+      currentBuild = parsed._build;
+      buildDropdown?.setValue(currentBuild);
+    } else {
+      toast(`Could not detect CPU/GPU from this file; using ${currentBuild}. Check the Build selector.`);
     }
 
     for (const [key, sec] of Object.entries(SCHEMA)) {
@@ -4744,7 +4868,7 @@
 
       const existing = loadUserPresets();
       const desc = descInput.value.trim();
-      const preset = { name, desc, dim: currentDim, values: snapshot };
+      const preset = { name, desc, dim: currentDim, build: currentBuild, values: snapshot };
       const next = existing.filter(p => p.name !== name);
       next.push(preset);
       if (!saveUserPresets(next)) {
@@ -4775,7 +4899,13 @@
 
   function applyPreset(preset) {
     currentDim = preset.dim || 2;
-    document.getElementById('dim-select').value = currentDim;
+    dimDropdown?.setValue(String(currentDim));
+    // Presets are build-agnostic (they set neither gpu_mem_frac nor spare_size),
+    // so keep the current build target unless the preset names one explicitly.
+    if (preset.build) {
+      currentBuild = preset.build;
+      buildDropdown?.setValue(currentBuild);
+    }
     initState();
 
     for (const [key, val] of Object.entries(preset.values)) {
@@ -5055,6 +5185,7 @@
           label: field.label || field.key,
           hint: field.hint || '',
           sectionLabel: sec.label || skey,
+          build: field.build || null,
         });
       }
     }
@@ -5064,10 +5195,11 @@
       if (!q) { dropdown.classList.add('hidden'); dropdown.innerHTML = ''; return; }
 
       const results = searchIndex.filter(e =>
-        e.fieldKey.toLowerCase().includes(q) ||
+        (!e.build || e.build === currentBuild) &&
+        (e.fieldKey.toLowerCase().includes(q) ||
         e.label.toLowerCase().includes(q) ||
         e.hint.toLowerCase().includes(q) ||
-        e.sectionLabel.toLowerCase().includes(q)
+        e.sectionLabel.toLowerCase().includes(q))
       ).slice(0, 10);
 
       if (results.length === 0) {

@@ -81,6 +81,7 @@ const SCHEMA = {
       { key: 'restart_step', label: 'restart_step', type: 'int', dim: 0, default: -1, hint: 'Iterations between restart dumps (-1=disabled)' },
       { key: 'restart_time', label: 'restart_time', type: 'int', dim: 0, default: 7200, hint: 'Wall-time restart (seconds, -1=disabled)' },
       { key: 'restart_time_step', label: 'restart_time_step', type: 'int', dim: 0, default: 100, hint: 'Check interval for time-based restart' },
+      { key: 'restart_dir', label: 'restart_dir', type: 'str', dim: 0, default: 'Restart', hint: 'Directory for restart checkpoint files (CLI --restart-dir overrides this)' },
     ]
   },
 
@@ -91,6 +92,9 @@ const SCHEMA = {
     required: true,
     groups: [
       { title: 'Magnetic Field', keys: ['Bx','By','Bz'] },
+      { title: 'Initial B Perturbation (t=0)',
+        desc: 'A one-time perturbation added to the self-consistent B at t=0 (applied at the end of StartUpAlgorithm; not on restart). It perturbs the evolving field rather than imposing a constant external field. Shares ct(1:n_constants) with the fields above. Default "0." means none.',
+        keys: ['Bx_init','By_init','Bz_init'] },
       { title: 'Electric Field', keys: ['Ex','Ey','Ez'] },
       { title: 'Constants & Extras', keys: ['n_constants','ct','Jext','NoiseLevel','adddipole','a_dipole','pos_dipole','curr_dipole'] },
     ],
@@ -98,6 +102,9 @@ const SCHEMA = {
       { key: 'Bx', label: 'Bx', type: 'str', dim: 0, default: '0.', hint: 'B_x expression', fparser: true },
       { key: 'By', label: 'By', type: 'str', dim: 0, default: '0.', hint: 'B_y expression', fparser: true },
       { key: 'Bz', label: 'Bz', type: 'str', dim: 0, default: '0.', hint: 'B_z expression', fparser: true },
+      { key: 'Bx_init', label: 'Bx_init', type: 'str', dim: 0, default: '0.', fparser: true, advanced: true, hint: 'δB_x expression' },
+      { key: 'By_init', label: 'By_init', type: 'str', dim: 0, default: '0.', fparser: true, advanced: true, hint: 'δB_y expression' },
+      { key: 'Bz_init', label: 'Bz_init', type: 'str', dim: 0, default: '0.', fparser: true, advanced: true, hint: 'δB_z expression' },
       { key: 'Ex', label: 'Ex', type: 'str', dim: 0, default: '0.', hint: 'E_x expression', fparser: true },
       { key: 'Ey', label: 'Ey', type: 'str', dim: 0, default: '0.', hint: 'E_y expression', fparser: true },
       { key: 'Ez', label: 'Ez', type: 'str', dim: 0, default: '0.', hint: 'E_z expression', fparser: true },
@@ -161,11 +168,11 @@ const SCHEMA = {
     desc: 'Numerical algorithm settings.',
     required: false,
     fields: [
-      { key: 'ifsmooth', label: 'ifsmooth', type: 'bool', dim: 0, default: true, hint: 'Master smoothing switch (gates all Smooth() calls)' },
+      { key: 'ifsmooth', label: 'ifsmooth', type: 'bool', dim: 0, default: true, locked: true, hint: 'Master smoothing switch (gates all Smooth() calls). Hardcoded to .true. in the codebase.' },
       { key: 'ifsmoothextfields', label: 'ifsmoothextfields', type: 'bool', dim: 0, default: true, hint: 'Smooth external/analytic fields at init' },
       { key: 'ifsmoothfields', label: 'ifsmoothfields', type: 'bool', dim: 0, default: true, hint: 'Smooth E/B inside per-step field solver' },
       { key: 'filternpass', label: 'filternpass', type: 'int', dim: 0, default: 6, hint: 'Filter passes' },
-      { key: 'compensate', label: 'compensate', type: 'bool', dim: 0, default: false, hint: 'Use 5-point compensating filter instead of 3-point binomial' },
+      { key: 'compensate', label: 'compensate', type: 'bool', dim: 0, default: false, locked: true, hint: 'Use the 5-point compensating filter instead of the 3-point binomial. Hardcoded to .false. in the codebase.' },
       { key: 'subniter', label: 'subniter', type: 'int', dim: 0, default: 8, hint: 'Sub-iterations for the field solver' },
       { key: 'allowederror', label: 'allowederror', type: 'real', dim: 0, default: 1.0, hint: 'Field-solver convergence threshold (sub-iter exit)' },
       { key: 'resistivity', label: 'resistivity', type: 'real', dim: 0, default: 0, hint: 'Resistivity' },
@@ -177,10 +184,12 @@ const SCHEMA = {
     label: 'Load Balancing',
     desc: 'MPI domain load balancing.',
     required: false,
+    buildLock: { GPU: 'Load balancing is not supported on GPU builds and is forced off (the GPU build aborts if it is enabled).' },
     fields: [
-      { key: 'loadbalance', label: 'loadbalance', type: 'bool', dim: 0, default: true, hint: 'Enable load balancing' },
-      { key: 'ifdynamicloadbalance', label: 'ifdynamicloadbalance', type: 'bool', dim: 0, default: true, hint: 'Dynamic rebalancing' },
-      { key: 'dynamicloadbalancestep', label: 'dynamicloadbalancestep', type: 'int', dim: 0, default: 500, hint: 'Steps between rebalances' },
+      { key: 'loadbalance', label: 'loadbalance', type: 'bool', dim: 0, default: true, hint: 'Enable load balancing',
+        buildOverride: { GPU: false } },
+      { key: 'ifdynamicloadbalance', label: 'ifdynamicloadbalance', type: 'bool', dim: 0, default: true, build: 'CPU', hint: 'Dynamic rebalancing' },
+      { key: 'dynamicloadbalancestep', label: 'dynamicloadbalancestep', type: 'int', dim: 0, default: 25, build: 'CPU', hint: 'Timesteps between dynamic load-balance checks (used only when load balancing and dynamic rebalancing are both on).' },
     ]
   },
 
@@ -191,7 +200,8 @@ const SCHEMA = {
     required: true,
     fields: [
       { key: 'num_species', label: 'num_species', type: 'int', dim: 0, default: 1, hint: 'Number of ion species (\u22651)', min: 1, max: 10 },
-      { key: 'xnmin', label: 'xnmin', type: 'real', dim: 0, default: 0.0, hint: 'Minimum grid density (legacy: accepted but currently unwired in the field solver)', advanced: true },
+      { key: 'gpu_mem_frac', label: 'gpu_mem_frac', type: 'real', dim: 0, default: 0.75, build: 'GPU',
+        hint: 'GPU only: global VRAM fill target, the fraction of free GPU memory the auto-tuned particle buffers grow to (0 < x \u2264 1, default 0.75). Replaces the per-species over-allocation headroom on GPU builds.' },
     ]
   },
 
@@ -213,7 +223,7 @@ const SCHEMA = {
         options: ['THERMAL','ISO','POWERLAW','JUTTNER','BIMAXWELLIAN'], hint: 'Velocity distribution' },
       { key: 'num_par', label: 'num_par', type: 'int', dim: 'DIM',
         default: [4,4,4], hint: 'Particles per cell', dimLabels: ['x','y','z'] },
-      { key: 'spare_size', label: 'spare_size', type: 'real', dim: 0, default: 0.1, hint: 'Spare memory fraction (0-1)' },
+      { key: 'spare_size', label: 'spare_size', type: 'real', dim: 0, default: 0.2, build: 'CPU', hint: 'CPU only: particle-buffer over-alloc fraction (≥0). On GPU builds this is auto-tuned from the global gpu_mem_frac.' },
       { key: 'ir', label: 'ir', type: 'int', dim: 0, default: 1, hint: 'Ionization ratio' },
       { key: 'mass_to_charge_ratio', label: 'mass_to_charge_ratio', type: 'real', dim: 0, default: 1.0, hint: 'm/q ratio' },
       { key: 'vdrift', label: 'vdrift', type: 'real', dim: 'VDIM',

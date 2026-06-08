@@ -5,6 +5,7 @@ A web-based input file generator for the **dHybridR** hybrid particle-in-cell pl
 ## Features
 
 - **Full schema coverage** — all 17 namelists and 101+ parameters from the dHybridR Fortran source
+- **CPU / GPU build target** — a header selector (next to Dimensions) toggles build-specific fields: GPU builds expose `gpu_mem_frac` (in `nl_particles`), hide per-species `spare_size`, and force `loadbalance = .false.` (load balancing is unsupported on GPU); CPU builds do the opposite. Loading a file auto-detects the build from which knobs it uses.
 - **1D / 2D / 3D dimension switching** — fields automatically adapt (vector lengths, boundary pairs, grid axes)
 - **Live preview** — the generated Fortran namelist text updates in real time as you edit
 - **4 built-in presets** — 2D Periodic Box, 3D Periodic Box, 2D Shock, 3D Shock
@@ -53,7 +54,7 @@ Upload the files to any static hosting service (GitHub Pages, Nginx, Apache, Cad
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  dHybridR Input File Generator     [1D|2D|3D]  📂 📋 ⬇ │
+│  dHybridR Input File Generator  [CPU|GPU] [1D|2D|3D] 📂📋⬇│
 ├──────────┬─────────────────────────┬────────────────────┤
 │ Sidebar  │  Form (active section)  │  Live Preview      │
 │          │                         │                    │
@@ -91,13 +92,13 @@ On mobile, the sidebar becomes a slide-out drawer triggered by the ☰ hamburger
 | 2 | `nl_time` | Time stepping (dt, niter, c) |
 | 3 | `nl_grid_space` | Grid cells, box size, boundary types |
 | 4 | `nl_global_output` | Output folder, dump frequency |
-| 5 | `nl_restart` | Restart file configuration |
-| 6 | `nl_ext_emf` | External electromagnetic fields |
+| 5 | `nl_restart` | Restart file configuration (incl. `restart_dir`) |
+| 6 | `nl_ext_emf` | External EM fields, plus `Bx_init/By_init/Bz_init` one-time initial B perturbation |
 | 7 | `nl_ext_force` | External force terms |
 | 8 | `nl_field_diag` | Field diagnostic output |
 | 9 | `nl_algorithm` | Smoothing, filtering, sub-cycling |
-| 10 | `nl_loadbalance` | Dynamic load balancing |
-| 11 | `nl_particles` | Global particle settings (num_species) |
+| 10 | `nl_loadbalance` | Dynamic load balancing (forced off on GPU builds; unsupported there) |
+| 11 | `nl_particles` | Global particle settings (num_species; `gpu_mem_frac` on GPU builds) |
 | 12 | `nl_species` | Per-species parameters (×N) |
 | 13 | `nl_boundary_conditions` | Per-species boundary conditions (×N) |
 | 14 | `nl_plasma_injector` | Per-species plasma injection (×N, up to 10 injectors each) |

@@ -40,6 +40,31 @@ function parseInputFile(text) {
   }
   result._dim = detectedDim || 2;
 
+  // Detect build target from the deck. gpu_mem_frac (nl_particles) is GPU-only;
+  // spare_size (nl_species) is CPU-only. They are mutually exclusive in a valid
+  // deck, so either one pins the build. Leave null if neither appears (the caller
+  // keeps the current selection).
+  // Match an actual `key =` assignment, ignoring `!` comments (a hint comment may
+  // name the other build's knob, e.g. gpu_mem_frac's comment mentions spare_size).
+  const stripComments = (body) => body.split('\n').map(l => l.replace(/!.*$/, '')).join('\n');
+  const assigns = (body, key) => new RegExp('(^|[^a-z_])' + key + '\\s*=', 'i').test(stripComments(body));
+  let detectedBuild = null;
+  for (const sec of sections) {
+    if (sec.name === 'particles' && assigns(sec.body, 'gpu_mem_frac')) {
+      detectedBuild = 'GPU';
+      break;
+    }
+  }
+  if (!detectedBuild) {
+    for (const sec of sections) {
+      if (sec.name === 'species' && assigns(sec.body, 'spare_size')) {
+        detectedBuild = 'CPU';
+        break;
+      }
+    }
+  }
+  result._build = detectedBuild;
+
   // Per-species section counters
   const perSpeciesKeys = Object.keys(SCHEMA).filter(k => SCHEMA[k].perSpecies);
   const perSpeciesCounts = {};
