@@ -87,6 +87,21 @@ header h1 { font-size: 18px; font-weight: 600; }
 }
 .cs-option:hover { background: var(--hover); }
 .cs-option.selected { color: var(--accent); font-weight: 600; }
+/* Upgraded in-form selects: hide the native element, keep the custom UI inline.
+   Their list is position:fixed (JS-anchored) so #main's scroll cannot clip it. */
+.cs-native-hidden { display: none !important; }
+.cs-inline { vertical-align: middle; }
+/* In-form dropdowns use normal-weight text, not the header's bold bright-blue accent */
+.cs-inline .cs-button { color: var(--text); font-weight: 400; }
+.cs-inline .cs-list { position: fixed; top: 0; left: 0; }
+.field-input > .cs-inline { display: block; }
+.field-input > .cs-inline .cs-button { width: 100%; justify-content: space-between; }
+/* Compact dropdowns inside the plot control bars (match the old inline selects) */
+[id$="-controls"] .cs-button, .plot-3d-controls .cs-button {
+  font-size: 12px; padding: 2px 8px; font-weight: 500;
+  color: var(--text); background: var(--surface); min-width: 0; gap: 6px;
+}
+[id$="-controls"] .cs-option, .plot-3d-controls .cs-option { font-size: 12px; padding: 4px 10px; }
 .header-buttons { display: flex; gap: 8px; }
 .header-buttons button, #btn-copy {
   background: var(--surface); color: var(--text); border: 1px solid var(--border);

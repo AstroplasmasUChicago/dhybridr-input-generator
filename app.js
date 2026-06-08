@@ -32,6 +32,7 @@
       document.querySelector('script[src*="katex"]')?.addEventListener('load', () => updateDtRecommendation());
     }
 
+    wireDropdownGlobals();
     buildDropdown = createDropdown('build-select',
       [{ value: 'CPU', label: 'CPU' }, { value: 'GPU', label: 'GPU' }], currentBuild, onBuildChange);
     dimDropdown = createDropdown('dim-select',
@@ -326,6 +327,9 @@
         }
       }
     }
+    // Replace every native <select> in the freshly built sections (form fields and
+    // plot controls) with a custom dropdown that positions correctly in webviews.
+    upgradeAllSelects(container);
   }
 
   function buildSectionHTML(skey, sec) {
@@ -772,6 +776,7 @@
     }
     container.innerHTML = buildFieldsHTML(skey, sec, spIdx);
     bindSectionInputs(container, skey, sec, spIdx);
+    upgradeAllSelects(container);
     loadStateToUI_section(skey);
     if (sec.multiPerSpecies) {
       validateInjector(skey, spIdx);
@@ -920,6 +925,7 @@
     const spIdx = activeSpeciesIdx[skey] || 0;
     container.innerHTML = buildFieldsHTML(skey, sec, spIdx);
     bindSectionInputs(container, skey, sec, spIdx);
+    upgradeAllSelects(container);
     loadStateToUI_section(skey);
     validateInjector(skey, spIdx);
   }
@@ -1427,12 +1433,133 @@
     button.addEventListener('click', () => {
       root.classList.contains('open') ? close() : open();
     });
-    // Click outside (or on another dropdown) closes this one; Escape closes it.
-    document.addEventListener('click', (e) => { if (!root.contains(e.target)) close(); });
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+    // Closing (outside-click / Escape / scroll) is handled globally, see wireDropdownGlobals.
 
     render();
     return { getValue: () => value, setValue: (v) => { value = v; render(); } };
+  }
+
+  // One set of global listeners closes any open custom dropdown (header or in-form),
+  // so individual dropdowns don't each register document/window listeners that would
+  // leak as selects are re-upgraded on every rebuild.
+  let dropdownGlobalsWired = false;
+  function closeOpenDropdowns(keep) {
+    document.querySelectorAll('.custom-select.open').forEach(el => {
+      if (el === keep) return;
+      el.classList.remove('open');
+      el.querySelector('.cs-button')?.setAttribute('aria-expanded', 'false');
+    });
+  }
+  function wireDropdownGlobals() {
+    if (dropdownGlobalsWired) return;
+    dropdownGlobalsWired = true;
+    document.addEventListener('click', (e) => {
+      document.querySelectorAll('.custom-select.open').forEach(el => {
+        if (!el.contains(e.target)) {
+          el.classList.remove('open');
+          el.querySelector('.cs-button')?.setAttribute('aria-expanded', 'false');
+        }
+      });
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeOpenDropdowns(); });
+    // Fixed-position lists would drift if the page scrolls under them; close instead.
+    // Capture phase catches scrolls from #main (scroll events do not bubble).
+    window.addEventListener('scroll', () => closeOpenDropdowns(), true);
+    window.addEventListener('resize', () => closeOpenDropdowns());
+  }
+
+  // Native <select> value descriptor, used to read/write the real element from
+  // inside the custom wrapper without recursing through our own override.
+  const NATIVE_SELECT_VALUE = (typeof HTMLSelectElement !== 'undefined')
+    ? Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value') : null;
+
+  // Upgrade a native <select> into a custom dropdown (same look as the header
+  // selectors). Native <select> popups misposition in some embedded/webview
+  // renderers, so we hide the native element but keep it as the source of truth:
+  // the custom list sets its value and dispatches 'change', and we intercept
+  // programmatic value sets so the button label stays in sync. Every existing
+  // bind/load path keeps talking to the native <select>, unchanged.
+  function upgradeSelect(select) {
+    if (!select || select._csUpgraded || !NATIVE_SELECT_VALUE) return;
+    select._csUpgraded = true;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'custom-select cs-inline';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'cs-button';
+    button.setAttribute('aria-haspopup', 'listbox');
+    button.disabled = select.disabled;
+    const list = document.createElement('ul');
+    list.className = 'cs-list';
+    list.setAttribute('role', 'listbox');
+    wrap.appendChild(button);
+    wrap.appendChild(list);
+
+    select.classList.add('cs-native-hidden');
+    select.parentNode.insertBefore(wrap, select.nextSibling);
+
+    const getVal = () => NATIVE_SELECT_VALUE.get.call(select);
+    const setVal = (v) => NATIVE_SELECT_VALUE.set.call(select, v);
+    const labelFor = (v) => {
+      const opt = Array.from(select.options).find(o => o.value === v);
+      return opt ? opt.textContent : '';
+    };
+    const close = () => { wrap.classList.remove('open'); button.setAttribute('aria-expanded', 'false'); };
+    // The list is position:fixed (it lives inside #main, a scroll container that
+    // would otherwise clip an absolutely-positioned popup), so anchor it to the
+    // button's viewport rect each time it opens.
+    const positionList = () => {
+      const r = button.getBoundingClientRect();
+      list.style.top = (r.bottom + 4) + 'px';
+      list.style.left = r.left + 'px';
+      list.style.minWidth = r.width + 'px';
+    };
+    const open = () => {
+      if (button.disabled) return;
+      wrap.classList.add('open');
+      button.setAttribute('aria-expanded', 'true');
+      positionList();
+    };
+
+    function refresh() {
+      const cur = getVal();
+      button.textContent = labelFor(cur);
+      button.disabled = select.disabled;
+      list.innerHTML = '';
+      for (const o of Array.from(select.options)) {
+        const li = document.createElement('li');
+        li.className = 'cs-option' + (o.value === cur ? ' selected' : '');
+        li.setAttribute('role', 'option');
+        li.textContent = o.textContent;
+        li.addEventListener('click', () => {
+          const changed = getVal() !== o.value;
+          setVal(o.value);
+          refresh();
+          close();
+          if (changed) select.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        list.appendChild(li);
+      }
+    }
+
+    button.addEventListener('click', () => {
+      wrap.classList.contains('open') ? close() : open();
+    });
+    // Outside-click / Escape / scroll closing is handled globally (wireDropdownGlobals).
+
+    // Reflect programmatic value sets (loadDataToInputs, plot rebuilds) on the button.
+    Object.defineProperty(select, 'value', {
+      configurable: true,
+      get() { return getVal(); },
+      set(v) { setVal(v); refresh(); },
+    });
+
+    refresh();
+  }
+
+  function upgradeAllSelects(container) {
+    (container || document).querySelectorAll('select').forEach(upgradeSelect);
   }
 
   function adjustDimArrays(sec, data) {
