@@ -1,111 +1,25 @@
 # dHybridR Input Generator
 
-A web-based input file generator for the **dHybridR** hybrid particle-in-cell plasma simulation code. Build, edit, and export Fortran namelist input files entirely in the browser — no server, no build step, no dependencies.
+A browser-based input file generator for the **dHybridR** hybrid particle-in-cell plasma code. Build, edit, and download Fortran namelist input files with nothing to install.
 
-## Features
+## Use it
 
-- **Full schema coverage** — all 17 namelists and 101+ parameters from the dHybridR Fortran source
-- **CPU / GPU build target** — a header selector (next to Dimensions) toggles build-specific fields: GPU builds expose `gpu_mem_frac` (in `nl_particles`), hide per-species `spare_size`, and force `loadbalance = .false.` (load balancing is unsupported on GPU); CPU builds do the opposite. Loading a file auto-detects the build from which knobs it uses.
-- **1D / 2D / 3D dimension switching** — fields automatically adapt (vector lengths, boundary pairs, grid axes)
-- **Live preview** — the generated Fortran namelist text updates in real time as you edit
-- **4 built-in presets** — 2D Periodic Box, 3D Periodic Box, 2D Shock, 3D Shock
-- **File load & parse** — drag-and-drop or browse to load an existing dHybridR input file; the parser populates every field
-- **Multi-species support** — add up to 10 particle species, each with their own boundary conditions, diagnostics, injectors, and tracking
-- **Validation** — integer enforcement on integer fields, `planepos` must fall within `boxsize`, boundary type consistency checks
-- **Responsive layout** — three-panel desktop view (sidebar navigation · form · live preview) collapses to a mobile-friendly layout with a hamburger menu
-- **Dark theme** — easy on the eyes for long editing sessions
-- **Copy & download** — one-click copy to clipboard or download as a ready-to-use input file
+- **Online:** [astroplasmasuchicago.github.io/dhybridr-input-generator](https://astroplasmasuchicago.github.io/dhybridr-input-generator/)
+- **Offline:** download this repo and open `index.html` in your browser.
 
-## Quick Start
+It is a static page (HTML, CSS, and JavaScript), so there is no server or build step.
 
-This is a **pure static site** — just HTML, CSS, and JavaScript. No build step required.
+## What it does
 
-### Local development (with Nix + direnv)
-
-```bash
-# direnv will activate the Nix shell automatically
-cd dhybridr-input-generator
-direnv allow   # one-time setup
-
-# Start the dev server (no-cache headers for hot reload)
-python3 server.py
-```
-
-Then open [http://localhost:8000](http://localhost:8000).
-
-### Local development (without Nix)
-
-```bash
-cd dhybridr-input-generator
-python3 server.py
-```
-
-`server.py` is a thin wrapper around Python's `http.server` that sets no-cache headers so you always see your latest changes. Then open [http://localhost:8000](http://localhost:8000).
-
-### Open directly
-
-Most browsers will work if you simply open `index.html` as a local file, though the file-load feature may require a server due to browser security policies.
-
-### Static hosting
-
-Upload the files to any static hosting service (GitHub Pages, Nginx, Apache, Caddy, etc.).
-
-## UI Overview
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  dHybridR Input File Generator  [CPU|GPU] [1D|2D|3D] 📂📋⬇│
-├──────────┬─────────────────────────┬────────────────────┤
-│ Sidebar  │  Form (active section)  │  Live Preview      │
-│          │                         │                    │
-│ • Node   │  Parameter fields with  │  !---- nl_time     │
-│ • Time   │  labels, hints, and     │  dt = 0.0025       │
-│ • Grid   │  defaults. Species      │  niter = 2000      │
-│ • Output │  sections repeat per    │  ...               │
-│ • EMF    │  num_species.           │  /                 │
-│ • ...    │                         │                    │
-│ (17 sec) │                         │                    │
-└──────────┴─────────────────────────┴────────────────────┘
-```
-
-On mobile, the sidebar becomes a slide-out drawer triggered by the ☰ hamburger button.
-
-## File Structure
-
-| File             | Description |
-|------------------|-------------|
-| `index.html`     | Main HTML page — minimal markup; the UI is built dynamically by `app.js` |
-| `style.css`      | All styles — dark theme, responsive breakpoints, hamburger menu, modals |
-| `schema.js`      | Complete schema of all 17 namelists with field definitions, types, defaults, dimension rules, and presets |
-| `server.py`      | Python dev server with no-cache headers |
-| `shell.nix`      | Nix shell environment (provides python3) |
-| `.envrc`          | direnv config to activate Nix shell automatically |
-| `generator.js`   | Converts the in-memory form state into a valid Fortran namelist input file string |
-| `parser.js`      | Parses an existing dHybridR input file back into the form state object |
-| `app.js`         | Application logic — state management, DOM rendering, event handling, validation, presets, file I/O |
-
-## Namelists Covered
-
-| # | Namelist | Description |
-|---|----------|-------------|
-| 1 | `nl_node_conf` | MPI process decomposition |
-| 2 | `nl_time` | Time stepping (dt, niter, c) |
-| 3 | `nl_grid_space` | Grid cells, box size, boundary types |
-| 4 | `nl_global_output` | Output folder, dump frequency |
-| 5 | `nl_restart` | Restart file configuration (incl. `restart_dir`) |
-| 6 | `nl_ext_emf` | External EM fields, plus `Bx_init/By_init/Bz_init` one-time initial B perturbation |
-| 7 | `nl_ext_force` | External force terms |
-| 8 | `nl_field_diag` | Field diagnostic output |
-| 9 | `nl_algorithm` | Smoothing, filtering, sub-cycling |
-| 10 | `nl_loadbalance` | Dynamic load balancing (forced off on GPU builds; unsupported there) |
-| 11 | `nl_particles` | Global particle settings (num_species; `gpu_mem_frac` on GPU builds) |
-| 12 | `nl_species` | Per-species parameters (×N) |
-| 13 | `nl_boundary_conditions` | Per-species boundary conditions (×N) |
-| 14 | `nl_plasma_injector` | Per-species plasma injection (×N, up to 10 injectors each) |
-| 15 | `nl_diag_species` | Per-species diagnostics (×N) |
-| 16 | `nl_raw_diag` | Per-species raw particle dumps (×N) |
-| 17 | `nl_track_diag` | Per-species particle tracking (×N) |
+- Covers all 17 dHybridR namelists and 100+ parameters.
+- CPU or GPU build target: a header selector shows only the fields that build accepts (for example `gpu_mem_frac` on GPU, `spare_size` on CPU, load balancing forced off on GPU). Loading a file auto-detects the build.
+- 1D / 2D / 3D switching, with fields that adapt automatically.
+- Live preview of the generated input file as you edit.
+- Load an existing input file to populate every field.
+- Built-in presets (periodic box, shock, Alfven wave) to start from.
+- Up to 10 species, each with its own boundaries, diagnostics, injectors, and tracking.
+- Copy to clipboard or download a ready-to-run input file.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).
