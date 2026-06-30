@@ -50,8 +50,8 @@ const SCHEMA = {
         options: ['per','reflect','open'],
         hint: 'Boundary types: xl, xr, yl, yr, zl, zr',
         dimLabels: ['x\u2097','x\u1d63','y\u2097','y\u1d63','z\u2097','z\u1d63'] },
-      { key: 'K', label: 'K', type: 'real', dim: 0, default: 1.0, hint: 'Adiabatic constant (must be > 0)' },
-      { key: 'gamma', label: 'gamma', type: 'real', dim: 0, default: 1.67, hint: 'Adiabatic index (must be > 0)' },
+      { key: 'K', label: 'K', type: 'real', dim: 0, default: 1.0, hint: 'Constant K in the electron pressure equation of state P_e = K nᵞ' },
+      { key: 'gamma', label: 'gamma', type: 'real', dim: 0, default: 1.67, hint: 'Adiabatic index γ in the electron pressure equation of state P_e = K nᵞ' },
     ]
   },
 
@@ -65,8 +65,8 @@ const SCHEMA = {
       { key: 'ndump', label: 'ndump', type: 'int', dim: 0, default: 100, hint: 'Iterations between dumps' },
       { key: 'tdump', label: 'tdump', type: 'real', dim: 0, default: -1.0, hint: 'Time between dumps (-1=use ndump)', advanced: true },
       { key: 'output_folder', label: 'output_folder', type: 'str', dim: 0, default: 'Output', hint: 'Output directory' },
-      { key: 'filemode', label: 'filemode', type: 'str', dim: 0, default: 'SERIAL',
-        options: ['SERIAL','PARALLEL'], hint: 'HDF5 file mode' },
+      { key: 'filemode', label: 'filemode', type: 'str', dim: 0, default: 'PARALLEL',
+        options: ['PARALLEL','SERIAL'], hint: 'HDF5 file mode' },
     ]
   },
 
@@ -171,23 +171,23 @@ const SCHEMA = {
       { key: 'ifsmooth', label: 'ifsmooth', type: 'bool', dim: 0, default: true, locked: true, hint: 'Master smoothing switch (gates all Smooth() calls). Hardcoded to .true. in the codebase.' },
       { key: 'ifsmoothextfields', label: 'ifsmoothextfields', type: 'bool', dim: 0, default: true, hint: 'Smooth external/analytic fields at init' },
       { key: 'ifsmoothfields', label: 'ifsmoothfields', type: 'bool', dim: 0, default: true, hint: 'Smooth E/B inside per-step field solver' },
-      { key: 'filternpass', label: 'filternpass', type: 'int', dim: 0, default: 6, hint: 'Filter passes' },
+      { key: 'filternpass', label: 'filternpass', type: 'int', dim: 0, default: 6, hint: 'Number of smoothing passes applied to the deposited density and velocity each step to reduce particle noise' },
       { key: 'compensate', label: 'compensate', type: 'bool', dim: 0, default: false, locked: true, hint: 'Use the 5-point compensating filter instead of the 3-point binomial. Hardcoded to .false. in the codebase.' },
       { key: 'subniter', label: 'subniter', type: 'int', dim: 0, default: 8, hint: 'Sub-iterations for the field solver' },
-      { key: 'allowederror', label: 'allowederror', type: 'real', dim: 0, default: 1.0, hint: 'Field-solver convergence threshold (sub-iter exit)' },
-      { key: 'resistivity', label: 'resistivity', type: 'real', dim: 0, default: 0, hint: 'Resistivity' },
+      { key: 'allowederror', label: 'allowederror', type: 'real', dim: 0, default: 1.0, hint: 'Field-solver convergence tolerance: stops sub-iterating once the field\'s change drops below it' },
+      { key: 'resistivity', label: 'resistivity', type: 'real', dim: 0, default: 0, hint: 'Resistivity η in Ohm\'s law' },
     ]
   },
 
   loadbalance: {
     namelist: 'nl_loadbalance',
     label: 'Load Balancing',
-    desc: 'MPI domain load balancing. On GPU builds the balancer runs via a host round-trip.',
+    desc: 'Balance the simulation workload across processors so none sits idle while another is overloaded.',
     required: false,
     fields: [
-      { key: 'loadbalance', label: 'loadbalance', type: 'bool', dim: 0, default: true, hint: 'Enable load balancing' },
-      { key: 'ifdynamicloadbalance', label: 'ifdynamicloadbalance', type: 'bool', dim: 0, default: true, hint: 'Dynamic rebalancing' },
-      { key: 'dynamicloadbalancestep', label: 'dynamicloadbalancestep', type: 'int', dim: 0, default: 35, hint: 'Timesteps between dynamic load-balance checks (used only when load balancing and dynamic rebalancing are both on).' },
+      { key: 'loadbalance', label: 'loadbalance', type: 'bool', dim: 0, default: true, hint: 'Master on/off switch for load balancing.' },
+      { key: 'ifdynamicloadbalance', label: 'ifdynamicloadbalance', type: 'bool', dim: 0, default: true, hint: 'Re-balance periodically as the run evolves and the busy region moves, instead of balancing only once at startup.' },
+      { key: 'dynamicloadbalancestep', label: 'dynamicloadbalancestep', type: 'int', dim: 0, default: 35, hint: 'How often (in timesteps) to check whether to re-balance. Lower is more responsive but adds overhead.' },
     ]
   },
 
@@ -222,8 +222,8 @@ const SCHEMA = {
       { key: 'num_par', label: 'num_par', type: 'int', dim: 'DIM',
         default: [4,4,4], hint: 'Particles per cell', dimLabels: ['x','y','z'] },
       { key: 'spare_size', label: 'spare_size', type: 'real', dim: 0, default: 0.2, build: 'CPU', hint: 'CPU only: particle-buffer over-alloc fraction (≥0). On GPU builds this is auto-tuned from the global gpu_mem_frac.' },
-      { key: 'ir', label: 'ir', type: 'int', dim: 0, default: 1, hint: 'Ionization ratio' },
-      { key: 'mass_to_charge_ratio', label: 'mass_to_charge_ratio', type: 'real', dim: 0, default: 1.0, hint: 'm/q ratio' },
+      { key: 'ir', label: 'ir', type: 'int', dim: 0, default: 1, hint: 'Ionization state of the species (elementary charges per ion); scales the charge density it deposits. Default 1 = singly charged.' },
+      { key: 'mass_to_charge_ratio', label: 'mass_to_charge_ratio', type: 'real', dim: 0, default: 1.0, hint: 'Mass-to-charge ratio relative to protons (1 = proton)' },
       { key: 'vdrift', label: 'vdrift', type: 'real', dim: 'VDIM',
         default: [0,0,0], hint: 'Drift velocity (γ*v)', dimLabels: ['vx','vy','vz'] },
       { key: 'vth', label: 'vth', type: 'real', dim: 0, default: 1.0, hint: 'Thermal velocity (γ*v)' },
@@ -263,7 +263,7 @@ const SCHEMA = {
         dimLabels: ['x\u2097','x\u1d63','y\u2097','y\u1d63','z\u2097','z\u1d63'] },
       { key: 'vth', label: 'vth', type: 'real', dim: 0, default: 0, hint: 'Thermal bath velocity (v)' },
       { key: 'vsh', label: 'vsh', type: 'real', dim: 0, default: 0, hint: 'Shift velocity (v)' },
-      { key: 'compress_ratio', label: 'compress_ratio', type: 'real', dim: 0, default: 1.0, hint: 'Compression ratio' },
+      { key: 'compress_ratio', label: 'compress_ratio', type: 'real', dim: 0, default: 1.0, hint: 'Shock compression ratio for the thermal/faux-shock boundary' },
     ]
   },
 
