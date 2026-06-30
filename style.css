@@ -191,17 +191,6 @@ header h1 { font-size: 18px; font-weight: 600; }
   opacity: 0.4; pointer-events: none; user-select: none;
 }
 
-/* Build-locked section (e.g. Load Balancing on GPU builds): dimmed like a
-   disabled section, with an explanatory banner that stays readable. */
-.build-lock-row {
-  margin-bottom: 16px; padding: 10px 14px;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 8px; font-size: 12px; color: var(--muted);
-}
-.section-build-locked .section-body {
-  opacity: 0.4; pointer-events: none; user-select: none;
-}
-
 /* Per-species enable toggle (multi-per-species sections: e.g. plasma_injector) */
 .section-all-species-disabled h2 .tag.disabled-tag { display: inline; }
 .species-enable-toggle { margin-bottom: 8px; }

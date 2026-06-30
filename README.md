@@ -12,7 +12,7 @@ It is a static page (HTML, CSS, and JavaScript), so there is no server or build 
 ## What it does
 
 - Covers all 17 dHybridR namelists and 100+ parameters.
-- CPU or GPU build target: a header selector shows only the fields that build accepts (for example `gpu_mem_frac` on GPU, `spare_size` on CPU, load balancing forced off on GPU). Loading a file auto-detects the build.
+- CPU or GPU build target: a header selector shows only the fields that build accepts (for example `gpu_mem_frac` on GPU, `spare_size` on CPU). Loading a file auto-detects the build.
 - 1D / 2D / 3D switching, with fields that adapt automatically.
 - Live preview of the generated input file as you edit.
 - Load an existing input file to populate every field.

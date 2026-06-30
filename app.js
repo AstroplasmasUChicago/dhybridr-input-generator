@@ -245,8 +245,6 @@
       const sec = SCHEMA[item];
       const div = document.createElement('div');
       div.className = 'section';
-      // Dim the whole section on a build that locks it (e.g. Load Balancing on GPU).
-      if (sec.buildLock && sec.buildLock[currentBuild]) div.classList.add('section-build-locked');
       div.dataset.section = item;
       div.innerHTML = buildSectionHTML(item, sec);
       container.appendChild(div);
@@ -350,12 +348,6 @@
       html += `</label>`;
       html += `<span class="enable-toggle-hint">When unchecked, this section is omitted from the generated input file.</span>`;
       html += `</div>`;
-    }
-
-    // Build-lock banner (e.g. Load Balancing on GPU): explains why the section
-    // is dimmed; rendered outside the section-body so it stays full-opacity.
-    if (sec.buildLock && sec.buildLock[currentBuild]) {
-      html += `<div class="build-lock-row">${sec.buildLock[currentBuild]}</div>`;
     }
 
     html += `<div class="section-body" data-section="${skey}">`;
@@ -577,12 +569,9 @@
     const arrSize = getArraySize(field.dim, currentDim);
     const dimClass = getDimVisibilityClass(field);
 
-    // A field can be pinned to a fixed value: per-build (buildOverride, e.g.
-    // loadbalance off on GPU) or always (locked, e.g. ifsmooth/compensate are
-    // hardcoded in the solver). A pinned control shows the value but is disabled.
-    const hasOverride = field.buildOverride && field.buildOverride[currentBuild] !== undefined;
-    const forcedVal = hasOverride ? field.buildOverride[currentBuild]
-                    : (field.locked ? field.default : undefined);
+    // A locked field is pinned to its default value (e.g. ifsmooth/compensate are
+    // hardcoded in the solver). A locked control shows the value but is disabled.
+    const forcedVal = field.locked ? field.default : undefined;
     const isLocked = forcedVal !== undefined;
     const lockAttr = isLocked ? ' disabled' : '';
 
@@ -1303,11 +1292,9 @@
 
     for (const field of sec.fields) {
       let val = data[field.key];
-      // A pinned value (buildOverride per build, or locked always) wins over state
-      // so the disabled control displays the value that will actually be emitted.
-      if (field.buildOverride && field.buildOverride[currentBuild] !== undefined) {
-        val = field.buildOverride[currentBuild];
-      } else if (field.locked) {
+      // A locked value wins over state so the disabled control displays the value
+      // that will actually be emitted.
+      if (field.locked) {
         val = field.default;
       }
       if (val === undefined) continue;

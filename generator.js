@@ -79,12 +79,9 @@ function formatSection(sec, skey, data, dim, build, speciesNum, injectorNum) {
     // only emitted for the matching build target; the other build rejects them.
     if (field.build && field.build !== build) continue;
     let val = data[field.key];
-    // A pinned value overrides whatever is in state: per build (buildOverride,
-    // e.g. loadbalance=.false. on GPU) or always (locked, e.g. ifsmooth/compensate
-    // are hardcoded in the solver regardless of the deck).
-    if (field.buildOverride && build && field.buildOverride[build] !== undefined) {
-      val = field.buildOverride[build];
-    } else if (field.locked) {
+    // A locked field is pinned to its default value regardless of the deck
+    // (e.g. ifsmooth/compensate are hardcoded in the solver).
+    if (field.locked) {
       val = field.default;
     }
     if (field.advanced && isDefaultValue(field, val, dim)) continue;

@@ -182,14 +182,12 @@ const SCHEMA = {
   loadbalance: {
     namelist: 'nl_loadbalance',
     label: 'Load Balancing',
-    desc: 'MPI domain load balancing.',
+    desc: 'MPI domain load balancing. On GPU builds the balancer runs via a host round-trip.',
     required: false,
-    buildLock: { GPU: 'Load balancing is not supported on GPU builds and is forced off (the GPU build aborts if it is enabled).' },
     fields: [
-      { key: 'loadbalance', label: 'loadbalance', type: 'bool', dim: 0, default: true, hint: 'Enable load balancing',
-        buildOverride: { GPU: false } },
-      { key: 'ifdynamicloadbalance', label: 'ifdynamicloadbalance', type: 'bool', dim: 0, default: true, build: 'CPU', hint: 'Dynamic rebalancing' },
-      { key: 'dynamicloadbalancestep', label: 'dynamicloadbalancestep', type: 'int', dim: 0, default: 25, build: 'CPU', hint: 'Timesteps between dynamic load-balance checks (used only when load balancing and dynamic rebalancing are both on).' },
+      { key: 'loadbalance', label: 'loadbalance', type: 'bool', dim: 0, default: true, hint: 'Enable load balancing' },
+      { key: 'ifdynamicloadbalance', label: 'ifdynamicloadbalance', type: 'bool', dim: 0, default: true, hint: 'Dynamic rebalancing' },
+      { key: 'dynamicloadbalancestep', label: 'dynamicloadbalancestep', type: 'int', dim: 0, default: 35, hint: 'Timesteps between dynamic load-balance checks (used only when load balancing and dynamic rebalancing are both on).' },
     ]
   },
 
