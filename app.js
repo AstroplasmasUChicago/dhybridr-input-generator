@@ -698,9 +698,23 @@
       for (const opt of opts) {
         // minDim 0 or 1 = always visible; 2 = needs DIM>=2; 3 = needs DIM>=3
         const hidden = opt.minDim > currentDim ? 'dim-hidden' : '';
-        html += `<label class="phase-cb-label ${hidden}" data-mindim="${opt.minDim}">`;
-        html += `<input type="checkbox" ${dataAttr} data-phase="${opt.name}">`;
-        html += `<span>${opt.name}</span></label>`;
+        const cb = `<label class="phase-cb-label" data-mindim="${opt.minDim}">` +
+          `<input type="checkbox" ${dataAttr} data-phase="${opt.name}">` +
+          `<span>${opt.name}</span></label>`;
+        if (opt.typed) {
+          // Grid fields (B/E) get a Total/Self/External picker. The select is a SIBLING
+          // of the label (not nested: a nested dropdown click would toggle the checkbox)
+          // and is revealed only when checked via the CSS :has() rule on .phase-item.
+          html += `<div class="phase-item ${hidden}" data-mindim="${opt.minDim}">${cb}`;
+          html += `<span class="ascent-type"><select ${dataAttr} data-phase-type="${opt.name}" aria-label="${opt.name} field type">`;
+          html += `<option value="Default">default</option>`;
+          html += `<option value="Total">Total</option>`;
+          html += `<option value="Self">Self</option>`;
+          html += `<option value="External">External</option>`;
+          html += `</select></span></div>`;
+        } else {
+          html += cb.replace('phase-cb-label"', `phase-cb-label ${hidden}"`);
+        }
       }
       html += `</div></div>`;
     }
@@ -1036,24 +1050,37 @@
             target._enabled = el.checked;
           }
           applyEnabledState(elSection);
+          if (elSection === 'ascent') validateSection('ascent');
           updatePreview();
           return;
         }
 
-        // Phase checkbox handling
-        if (field && field.phaseCheckboxes && el.dataset.phase) {
-          // Collect all checked phase checkboxes for this field
-          const cbSelector = speciesIdx !== undefined
-            ? `[data-section="${skey}"][data-key="${field.key}"][data-species="${spIdx}"][data-phase]`
-            : `[data-section="${skey}"][data-key="${field.key}"][data-phase]`;
+        // Phase checkbox handling (also fires for a per-field type select change).
+        if (field && field.phaseCheckboxes && (el.dataset.phase || el.dataset.phaseType)) {
+          const base = speciesIdx !== undefined
+            ? `[data-section="${skey}"][data-key="${field.key}"][data-species="${spIdx}"]`
+            : `[data-section="${skey}"][data-key="${field.key}"]`;
+          // Each checked box contributes its name; a checked grid field (B/E) with a
+          // non-Default type picker contributes "name:Type" (Bz:External, ...).
+          const known = new Set();
           const checked = [];
-          container.querySelectorAll(cbSelector).forEach(cb => {
-            if (cb.checked) checked.push(cb.dataset.phase);
+          container.querySelectorAll(`${base}[data-phase]`).forEach(cb => {
+            known.add(cb.dataset.phase);
+            if (!cb.checked) return;
+            const name = cb.dataset.phase;
+            const typeSel = container.querySelector(`${base}[data-phase-type="${name}"]`);
+            const t = typeSel ? typeSel.value : '';
+            checked.push(t && t !== 'Default' ? `${name}:${t}` : name);
           });
-          target[elKey] = checked.join(',');
+          // Keep any prior entry whose base name has no checkbox (e.g. a hand-added
+          // name we do not offer), so a toggle never silently drops it.
+          const preserved = String(target[elKey] || '').split(',').map(s => s.trim()).filter(s => s)
+            .filter(entry => !known.has((entry.split(':')[0] || '').trim()));
+          target[elKey] = checked.concat(preserved).join(',');
           if (elSection === 'diag_species' && spIdx !== undefined) {
             validateDiagSpecies(elSection, spIdx);
           }
+          if (elSection === 'ascent') validateSection('ascent');
           updatePreview();
           return;
         }
@@ -1215,6 +1242,7 @@
         if (elSection === 'raw_diag') validateSection('raw_diag');
         if (elSection === 'particles') validateSection('particles');
         if (elSection === 'species') validateSection('species');
+        if (elSection === 'ascent') validateSection('ascent');
       };
 
       el.addEventListener('input', onChange);
@@ -1317,10 +1345,28 @@
           }
         }
       } else if (field.phaseCheckboxes) {
-        // Phase checkboxes: val is a comma-separated string
+        // Phase checkboxes: val is a comma-separated string. A grid-field entry may
+        // carry a ":Type" qualifier (Bz:External) that drives its type picker.
         const selected = String(val || '').split(',').map(s => s.trim()).filter(s => s);
+        // Match names case-insensitively: the Fortran reader accepts lowercase field
+        // names (bz, bmagnitude), so a hand-edited deck should still populate the UI.
+        const namesChecked = new Set();
+        const typeByName = {};
+        const normType = { total: 'Total', self: 'Self', external: 'External' };
+        for (const entry of selected) {
+          const ci = entry.indexOf(':');
+          const nm = (ci >= 0 ? entry.slice(0, ci) : entry).trim().toLowerCase();
+          namesChecked.add(nm);
+          if (ci >= 0) {
+            const t = normType[entry.slice(ci + 1).trim().toLowerCase()];
+            if (t) typeByName[nm] = t;
+          }
+        }
         document.querySelectorAll(`${selector}[data-phase]`).forEach(cb => {
-          cb.checked = selected.includes(cb.dataset.phase);
+          cb.checked = namesChecked.has(cb.dataset.phase.toLowerCase());
+        });
+        document.querySelectorAll(`${selector}[data-phase-type]`).forEach(sel => {
+          sel.value = typeByName[sel.dataset.phaseType.toLowerCase()] || 'Default';
         });
       } else {
         // Scalar
@@ -4593,6 +4639,36 @@
       if (adaptiveDt && rawNdumpSet && !rawTdumpSet) warnings.push('adaptive_dt is on — use raw_tdump instead of raw_ndump');
     }
 
+    // Ascent: only meaningful once the section is enabled (written to the deck).
+    if (skey === 'ascent' && isSectionEnabled('ascent')) {
+      const a = state.ascent || {};
+      const enabled = a.enabled;
+      const ndump = Number(a.ndump);
+      const tdump = parseFloat(a.tdump);
+      const ndumpSet = !isNaN(ndump) && ndump >= 1;
+      const tdumpSet = !isNaN(tdump) && tdump > 0;
+      const outputs = String(a.outputs || '').split(',').map(s => s.trim()).filter(s => s);
+      if (enabled && !ndumpSet && !tdumpSet) {
+        warnings.push('enabled but neither ndump (>= 1) nor tdump (> 0) is set: the run aborts. Set one.');
+      }
+      if (ndumpSet && tdumpSet) {
+        warnings.push('Both ndump and tdump are set: tdump takes precedence and ndump is ignored.');
+      }
+      if (enabled && outputs.length === 0) {
+        warnings.push('enabled but no outputs selected: nothing will be rendered.');
+      }
+      // The Fortran reader holds outputs in a fixed 32-slot array (ASCENT_MAXFLD);
+      // a longer list makes the namelist read fail and the run abort at startup.
+      if (outputs.length > 32) {
+        warnings.push(`${outputs.length} outputs selected, but the code accepts at most 32: the run aborts. Remove some.`);
+      }
+      // A written block with enabled=.false. renders nothing (equivalent to disabling
+      // the section); flag it so it is not mistaken for an active configuration.
+      if (!enabled) {
+        warnings.push('enabled is off: this block is written but renders nothing. Disable the section to omit it entirely.');
+      }
+    }
+
     // GPU-only: the GPU build aborts at init if gpu_mem_frac is outside (0, 1].
     if (skey === 'particles' && currentBuild === 'GPU') {
       const raw = state.particles?.gpu_mem_frac;
@@ -4796,6 +4872,10 @@
           }
         } else {
           state[key] = { ...buildDefaults(sec), ...parsed[key] };
+          // An optional section (ext_force, ascent) present in the loaded file must
+          // be marked enabled, or buildDefaults' _enabled:false would make the
+          // generator drop the block on the next download.
+          if (sec.enabled === false) state[key]._enabled = true;
         }
       }
     }

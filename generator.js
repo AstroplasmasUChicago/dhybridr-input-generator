@@ -14,9 +14,10 @@ function generateInputFile(state, dim, build) {
   lines.push('! ------------------------------------------------------------------------------');
   lines.push('');
 
-  // Output order matches ReadInputFile call order
+  // Output order matches ReadInputFile call order (initialize.f90). ReadAscent runs
+  // right after ReadGlobalOutput and before ReadRestart, so ascent{} goes there.
   const globalSections = [
-    'node_conf', 'time', 'grid_space', 'global_output', 'restart',
+    'node_conf', 'time', 'grid_space', 'global_output', 'ascent', 'restart',
     'ext_emf', 'ext_force', 'field_diag', 'algorithm', 'loadbalance', 'particles',
   ];
   const perSpeciesSections = [
@@ -126,8 +127,9 @@ function formatValue(field, val, dim) {
     }
   }
 
-  // Special: phasespaces is stored as comma-separated but output as individual quoted strings
-  if (field.key === 'phasespaces' && field.type === 'str') {
+  // Special: a quoted-list field (phasespaces, ascent outputs) is stored as a single
+  // comma-separated string but emitted as individual quoted strings.
+  if ((field.key === 'phasespaces' || field.quotedList) && field.type === 'str') {
     const items = String(val).split(',').map(s => s.trim()).filter(s => s);
     if (items.length === 0) return null;
     const parts = items.map(s => `"${s}"`);

@@ -168,8 +168,9 @@ function parseNamelistBody(body, schema, dim) {
         const v = rawVal.trim().toLowerCase();
         data[field.key] = v === '.true.' || v === 'true' || v === 't';
       } else if (field.type === 'str') {
-        // Special: phasespaces stores multiple quoted strings as comma-separated
-        if (field.key === 'phasespaces') {
+        // Special: a quoted-list field (phasespaces, ascent outputs) stores multiple
+        // quoted strings joined as one comma-separated string.
+        if (field.key === 'phasespaces' || field.quotedList) {
           const all = [];
           const re = /"([^"]*)"/g;
           let sm;
