@@ -25,7 +25,6 @@ const SCHEMA = {
       { key: 'dt', label: 'dt', type: 'real', dim: 0, default: 0.0025, hint: 'Time step (initial if adaptive_dt)' },
       { key: 'niter', label: 'niter', type: 'int', dim: 0, default: 2000, hint: 'Number of iterations (-1=use tend)' },
       { key: 'tend', label: 'tend', type: 'real', dim: 0, default: -1.0, hint: 'End time (-1=use niter)' },
-      { key: 't0', label: 't0', type: 'real', dim: 0, default: 0.0, hint: 'Initial time' },
       { key: 'stiter', label: 'stiter', type: 'int', dim: 0, default: 0, hint: 'Starting iteration number' },
       { key: 'c', label: 'c', type: 'real', dim: 0, default: 100.0, hint: 'Speed of light' },
       { key: 'adaptive_dt', label: 'adaptive_dt', type: 'bool', dim: 0, default: false, hint: 'Adaptive time stepping' },
