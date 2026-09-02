@@ -156,10 +156,13 @@ function parseNamelistBody(body, schema, dim) {
         });
         data[field.key] = bools;
       } else {
-        const nums = rawVal.split(',').map(v => {
+        let nums = rawVal.split(',').map(v => {
           v = v.trim().replace(/d/gi, 'e');
           return Number(v) || 0;
         });
+        // layout 'minmax': the file holds all mins then all maxs, the form holds
+        // per-axis (min,max) pairs (see schema.js).
+        if (field.layout === 'minmax') nums = minMaxToPairs(nums);
         data[field.key] = nums;
       }
     } else {
@@ -195,4 +198,13 @@ function parseNamelistBody(body, schema, dim) {
   }
 
   return data;
+}
+
+// (min0,min1,...,max0,max1,...) -> (min0,max0,min1,max1,...); an odd count is left as is
+function minMaxToPairs(arr) {
+  if (arr.length % 2 !== 0) return arr;
+  const d = arr.length / 2;
+  const out = [];
+  for (let i = 0; i < d; i++) out.push(arr[i], arr[d + i]);
+  return out;
 }

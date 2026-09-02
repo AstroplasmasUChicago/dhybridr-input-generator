@@ -1,5 +1,7 @@
 // dHybridR input file schema — every parameter from every Read* subroutine
 // dim: 0=scalar, 'DIM'=DIM-dependent, 'DIM2'=DIM*2, 'BDIM'=2*(DIM-1), 'VDIM'=always 3, N=fixed
+// layout: 'minmax' = the code reads this DIM2 array as all mins then all maxs (xmin,ymin,zmin,xmax,ymax,zmax);
+//   the form keeps per-axis (min,max) pairs and generator.js/parser.js permute at the file boundary
 // type: 'int','real','bool','str','strarr'
 // perSpecies sections repeat num_species times
 
@@ -311,9 +313,9 @@ const SCHEMA = {
       { key: 'pl_max', label: 'pl_max', type: 'real', dim: 0, default: 1000.0, hint: 'Power-law maximum momentum (POWERLAW only; requires 0 < pl_min < pl_max)', advanced: true },
       { key: 'nsp', label: 'nsp', type: 'str', dim: 0, default: '1.', fparser: true, hint: 'Density profile — controls particle charge weight. Use for smooth gradients. e.g. "0.5*(1-htan((x-ct(1))/ct(2)))"' },
       { key: 'nsp_domain', label: 'nsp_domain', type: 'str', dim: 0, default: '', fparser: true, hint: 'Binary mask: particles only where > 0. Does NOT scale density. Empty = full box. e.g. "if(sqrt((x-ct(5))^2+(y-ct(6))^2)<ct(8),1.,0.)"' },
-      { key: 'domain_boundary', label: 'domain_boundary', type: 'real', dim: 'DIM2',
-        default: [-1,-1,-1,-1,-1,-1], hint: 'Hard rectangular clip on particle placement (-1 = use full box). Applied before nsp_domain.',
-        dimLabels: ['x\u2097','x\u1d63','y\u2097','y\u1d63','z\u2097','z\u1d63'] },
+      { key: 'domain_boundary', label: 'domain_boundary', type: 'real', dim: 'DIM2', layout: 'minmax',
+        default: [-1,-1,-1,-1,-1,-1], hint: 'Hard rectangular clip on particle placement (-1 = use full box). Applied before nsp_domain. File order: all mins then all maxs (xmin,ymin,zmin,xmax,ymax,zmax).',
+        dimLabels: ['x\u2098\u1d62\u2099','x\u2098\u2090\u2093','y\u2098\u1d62\u2099','y\u2098\u2090\u2093','z\u2098\u1d62\u2099','z\u2098\u2090\u2093'] },
       { key: 'n_constants', label: 'n_constants', type: 'int', dim: 0, default: 0, hint: 'Number of constants available as ct(1)..ct(N) in nsp, nsp_domain, and vsp expressions' },
       { key: 'ct', label: 'ct', type: 'real', dim: 16, default: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], hint: 'User constants ct(1) through ct(16), referenced in nsp/nsp_domain/vsp expressions', advanced: true },
       { key: 'follow', label: 'follow', type: 'bool', dim: 0, default: false, hint: 'Follow/tag particles' },
@@ -423,9 +425,9 @@ const SCHEMA = {
       { key: 'raw_dump', label: 'raw_dump', type: 'bool', dim: 0, default: false, hint: 'Enable raw dumps' },
       { key: 'raw_ndump', label: 'raw_ndump', type: 'int', dim: 0, default: -1, hint: 'Iterations between raw dumps' },
       { key: 'raw_tdump', label: 'raw_tdump', type: 'real', dim: 0, default: -1.0, hint: 'Time between raw dumps (-1=use raw_ndump)', advanced: true },
-      { key: 'raw_volume', label: 'raw_volume', type: 'real', dim: 'DIM2',
-        default: [-1,-1,-1,-1,-1,-1], hint: 'Spatial volume filter',
-        dimLabels: ['x\u2097','x\u1d63','y\u2097','y\u1d63','z\u2097','z\u1d63'] },
+      { key: 'raw_volume', label: 'raw_volume', type: 'real', dim: 'DIM2', layout: 'minmax',
+        default: [-1,-1,-1,-1,-1,-1], hint: 'Spatial volume filter: dumps particles with min <= coordinate < max on every axis. Leave all -1 for the whole box, otherwise set every value (the code takes a lone -1 literally). File order: all mins then all maxs (xmin,ymin,zmin,xmax,ymax,zmax).',
+        dimLabels: ['x\u2098\u1d62\u2099','x\u2098\u2090\u2093','y\u2098\u1d62\u2099','y\u2098\u2090\u2093','z\u2098\u1d62\u2099','z\u2098\u2090\u2093'] },
       { key: 'raw_dump_fraction', label: 'raw_dump_fraction', type: 'real', dim: 0, default: 1.0, hint: 'Fraction of particles to dump' },
       { key: 'v_min', label: 'v_min', type: 'real', dim: 0, default: 0, hint: 'Minimum velocity filter (v)' },
       { key: 'selectrule', label: 'selectrule', type: 'str', dim: 0, default: '1.', fparser: true, hint: 'Particle filter expression — dumps where result > 0. Uses x,y,z (position) and vx,vy,vz (v). Default "1." falls back to raw_volume/v_min/raw_dump_fraction filters. Any other value replaces those filters entirely.' },

@@ -4637,6 +4637,24 @@
         warnings.push(`raw_ndump (${rawNdump}) must be a multiple of ndump (${ndump})`);
       }
       if (adaptiveDt && rawNdumpSet && !rawTdumpSet) warnings.push('adaptive_dt is on — use raw_tdump instead of raw_ndump');
+
+      // raw_volume: the code treats -1 as "whole box" only when every value is -1,
+      // and an inverted box selects nothing (no raw file, no message).
+      const rv = data?.raw_volume || [];
+      const rvVals = [];
+      for (let i = 0; i < currentDim * 2; i++) rvVals.push(Number(rv[i] ?? -1));
+      if (!rvVals.every(v => v === -1)) {
+        if (rvVals.some(v => v === -1)) {
+          warnings.push('raw_volume: -1 only means "whole box" when every value is -1. Set all the values.');
+        } else {
+          const axes = ['x', 'y', 'z'];
+          for (let a = 0; a < currentDim; a++) {
+            if (rvVals[2*a] >= rvVals[2*a+1]) {
+              warnings.push(`raw_volume: ${axes[a]} min (${rvVals[2*a]}) >= max (${rvVals[2*a+1]}): no particles selected, no raw file written`);
+            }
+          }
+        }
+      }
     }
 
     // Ascent: only meaningful once the section is enabled (written to the deck).
@@ -4675,6 +4693,21 @@
       const g = parseFloat(raw);
       if (isNaN(g) || g <= 0 || g > 1) {
         warnings.push(`gpu_mem_frac = ${raw}: must be in (0, 1] (the GPU build aborts otherwise)`);
+      }
+    }
+
+    // domain_boundary: -1 is honoured per value, but an inverted box places no particles.
+    if (skey === 'species') {
+      const specs = state.species || [];
+      const axes = ['x', 'y', 'z'];
+      for (let i = 0; i < specs.length; i++) {
+        const db = specs[i]?.domain_boundary || [];
+        for (let a = 0; a < currentDim; a++) {
+          const lo = Number(db[2*a] ?? -1), hi = Number(db[2*a+1] ?? -1);
+          if (lo !== -1 && hi !== -1 && lo >= hi) {
+            warnings.push(`Species ${i+1}: domain_boundary ${axes[a]} min (${lo}) >= max (${hi}): no particles placed`);
+          }
+        }
       }
     }
 

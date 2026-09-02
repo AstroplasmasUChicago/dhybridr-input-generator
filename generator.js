@@ -105,6 +105,9 @@ function formatValue(field, val, dim) {
     // Array value
     let arr = Array.isArray(val) ? val.slice(0, arrSize) : [val];
     while (arr.length < arrSize) arr.push(field.default?.[arr.length] ?? 0);
+    // layout 'minmax': the form holds per-axis (min,max) pairs, the code reads
+    // all mins then all maxs (see schema.js).
+    if (field.layout === 'minmax') arr = pairsToMinMax(arr);
 
     if (field.type === 'strarr') {
       // For fparser arrays (e.g. vsp): if any component is non-empty, fill empty ones with "0."
@@ -180,6 +183,11 @@ function getArraySize(dimSpec, dim) {
   if (dimSpec === 'VDIM_STR') return 3;
   if (typeof dimSpec === 'number') return dimSpec;
   return 0;
+}
+
+// (min0,max0,min1,max1,...) -> (min0,min1,...,max0,max1,...)
+function pairsToMinMax(arr) {
+  return arr.filter((_, i) => i % 2 === 0).concat(arr.filter((_, i) => i % 2 === 1));
 }
 
 function isDefaultValue(field, val, dim) {
