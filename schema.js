@@ -275,6 +275,8 @@ const SCHEMA = {
       { key: 'num_species', label: 'num_species', type: 'int', dim: 0, default: 1, hint: 'Number of ion species (\u22651)', min: 1, max: 10 },
       { key: 'gpu_mem_frac', label: 'gpu_mem_frac', type: 'real', dim: 0, default: 0.75, build: 'GPU',
         hint: 'GPU only: global VRAM fill target, the fraction of free GPU memory the auto-tuned particle buffers grow to (0 < x \u2264 1, default 0.75). Replaces the per-species over-allocation headroom on GPU builds.' },
+      { key: 'gpu_min_spare_frac', label: 'gpu_min_spare_frac', type: 'real', dim: 0, default: 0, build: 'GPU', advanced: true,
+        hint: 'GPU only: minimum per-rank particle-buffer headroom the run must be able to reserve before it starts (>= 0, default 0 = off). May raise the buffers above the gpu_mem_frac target when capacity allows; the run aborts at startup if no rank can meet it.' },
     ]
   },
 

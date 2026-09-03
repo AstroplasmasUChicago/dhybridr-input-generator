@@ -40,7 +40,7 @@ function parseInputFile(text) {
   }
   result._dim = detectedDim || 2;
 
-  // Detect build target from the deck. gpu_mem_frac (nl_particles) is GPU-only;
+  // Detect build target from the deck. gpu_mem_frac and gpu_min_spare_frac (nl_particles) are GPU-only;
   // a non-negative spare_size (nl_species) is CPU-only. They are mutually exclusive
   // in a valid deck, so either one pins the build. Leave null if neither appears
   // (the caller keeps the current selection).
@@ -55,7 +55,7 @@ function parseInputFile(text) {
   };
   let detectedBuild = null;
   for (const sec of sections) {
-    if (sec.name === 'particles' && assigns(sec.body, 'gpu_mem_frac')) {
+    if (sec.name === 'particles' && (assigns(sec.body, 'gpu_mem_frac') || assigns(sec.body, 'gpu_min_spare_frac'))) {
       detectedBuild = 'GPU';
       break;
     }
