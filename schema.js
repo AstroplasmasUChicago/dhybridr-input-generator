@@ -31,6 +31,7 @@ const SCHEMA = {
       { key: 'c', label: 'c', type: 'real', dim: 0, default: 100.0, hint: 'Speed of light' },
       { key: 'adaptive_dt', label: 'adaptive_dt', type: 'bool', dim: 0, default: false, hint: 'Adaptive time stepping' },
       { key: 'cfl_factor', label: 'cfl_factor', type: 'real', dim: 0, default: 0.5, hint: 'CFL safety factor (used with adaptive_dt)' },
+      { key: 't0', label: 't0', type: 'real', dim: 0, default: '-huge(1.0_p_k_rd)', hint: 'TODO' },  // AUTO-ADDED BY schema-sync — review hint/groups
     ]
   },
 
@@ -68,6 +69,9 @@ const SCHEMA = {
       { key: 'output_folder', label: 'output_folder', type: 'str', dim: 0, default: 'Output', hint: 'Output directory' },
       { key: 'filemode', label: 'filemode', type: 'str', dim: 0, default: 'PARALLEL',
         options: ['PARALLEL','SERIAL'], hint: 'HDF5 file mode' },
+      { key: 'units', label: 'units', type: 'str', dim: 0, default: '', hint: 'TODO' },  // AUTO-ADDED BY schema-sync — review hint/groups
+      { key: 'n0', label: 'n0', type: 'real', dim: 0, default: -1.0, hint: 'TODO' },  // AUTO-ADDED BY schema-sync — review hint/groups
+      { key: 'B0', label: 'B0', type: 'real', dim: 0, default: -1.0, hint: 'TODO' },  // AUTO-ADDED BY schema-sync — review hint/groups
     ]
   },
 
@@ -277,6 +281,7 @@ const SCHEMA = {
         hint: 'GPU only: global VRAM fill target, the fraction of free GPU memory the auto-tuned particle buffers grow to (0 < x \u2264 1, default 0.75). Replaces the per-species over-allocation headroom on GPU builds.' },
       { key: 'gpu_min_spare_frac', label: 'gpu_min_spare_frac', type: 'real', dim: 0, default: 0, build: 'GPU', advanced: true,
         hint: 'GPU only: minimum per-rank particle-buffer headroom the run must be able to reserve before it starts (>= 0, default 0 = off). May raise the buffers above the gpu_mem_frac target when capacity allows; the run aborts at startup if no rank can meet it.' },
+      { key: 'xnmin', label: 'xnmin', type: 'real', dim: 0, default: -1.0, hint: 'TODO' },  // AUTO-ADDED BY schema-sync — review hint/groups
     ]
   },
 
