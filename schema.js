@@ -368,8 +368,6 @@ const SCHEMA = {
         default: [4,4,4], hint: 'Particles per cell', dimLabels: ['x','y','z'] },
       { key: 'vdrift', label: 'vdrift', type: 'real', dim: 'VDIM',
         default: [0,0,0], hint: 'Drift velocity (γ*v)', dimLabels: ['vx','vy','vz'] },
-      { key: 'vboost', label: 'vboost', type: 'real', dim: 'VDIM',
-        default: [0,0,0], hint: 'Boost velocity (v)', dimLabels: ['vx','vy','vz'], advanced: true },
       { key: 'vth', label: 'vth', type: 'real', dim: 0, default: 0, hint: 'Thermal velocity (γ*v)' },
       { key: 'sttime', label: 'sttime', type: 'real', dim: 0, default: 0, hint: 'Start time' },
       { key: 'endtime', label: 'endtime', type: 'real', dim: 0, default: 1e30, hint: 'End time' },

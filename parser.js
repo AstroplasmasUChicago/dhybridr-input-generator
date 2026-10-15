@@ -145,6 +145,9 @@ function parseNamelistBody(body, schema, dim) {
 
   for (let i = 0; i < assignments.length; i++) {
     const a = assignments[i];
+    if (schema.namelist === 'nl_plasma_injector' && a.key === 'vboost') {
+      throw new Error('plasma_injector.vboost was removed with faux-shock injection; remove it and use vdrift for ordinary injection.');
+    }
     const end = i + 1 < assignments.length ? assignments[i+1].matchStart : joined.length;
     let rawVal = joined.slice(a.start, end);
     rawVal = rawVal.replace(/,\s*$/, '').trim();

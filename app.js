@@ -5116,6 +5116,13 @@
   }
 
   function applyPreset(preset) {
+    // All saved injectors are enabled below; reject nonzero vboost before loading.
+    for (const injectors of preset.values.plasma_injector || []) {
+      if (Array.isArray(injectors) && injectors.some(d => d.vboost?.some(v => Number(v) !== 0))) {
+        toast('Cannot load preset: plasma_injector.vboost was removed with faux-shock injection.');
+        return;
+      }
+    }
     currentDim = preset.dim || 2;
     dimDropdown?.setValue(String(currentDim));
     // Presets are build-agnostic (they set neither gpu_mem_frac nor spare_size),
@@ -5132,7 +5139,11 @@
       if (sec.multiPerSpecies && Array.isArray(val)) {
         for (let i = 0; i < val.length; i++) {
           if (Array.isArray(val[i])) {
-            state[key][i] = val[i].map(d => ({ ...buildDefaults(sec), ...d, _enabled: true }));
+            state[key][i] = val[i].map(d => {
+              const injector = { ...buildDefaults(sec), ...d, _enabled: true };
+              delete injector.vboost;
+              return injector;
+            });
           }
         }
       } else if (sec.perSpecies && Array.isArray(val)) {
