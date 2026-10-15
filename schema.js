@@ -467,7 +467,7 @@ const SECTION_ORDER = [
   { header: 'Simulation' },
   'node_conf', 'time', 'grid_space',
   { header: 'Physics' },
-  'ext_emf', 'ext_force', 'algorithm',
+  'fluid_electrons', 'ext_emf', 'ext_force', 'algorithm',
   { header: 'Output' },
   'global_output', 'ascent', 'field_diag', 'restart',
   { header: 'Particles' },
