@@ -55,11 +55,11 @@ const SCHEMA = {
   fluid_electrons: {
     namelist: 'nl_fluid_electrons',
     label: 'Fluid Electrons',
-    desc: 'Electron closure: polytropic P_e = Te n^gamma from the density, or the evolved electron pressure equation with heat conduction.',
+    desc: 'Electron closure: polytropic P_e = Te n^gamma from the density, or P_e advanced by the electron pressure evolution equation with heat conduction.',
     required: true,
     fields: [
       { key: 'closure', label: 'closure', type: 'str', dim: 0, default: 'polytropic', options: ['polytropic','evolved'],
-        hint: 'polytropic: P_e = Te n^gamma; evolved: P_e advanced by the electron energy equation' },
+        hint: 'polytropic: P_e = Te n^gamma from the density; evolved: P_e advanced by the electron pressure evolution equation' },
       { key: 'Te', label: 'Te', type: 'str', dim: 0, default: '1.', fparser: true,
         hint: 'Electron temperature at n = 1 (m_p v_A^2): a number for the polytrope; for the evolved closure an expression in x, y, z and n giving the initial temperature' },
       { key: 'gamma', label: 'gamma', type: 'real', dim: 0, default: 1.67, hint: 'Adiabatic index of the electrons (both closures)' },
