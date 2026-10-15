@@ -257,10 +257,10 @@ const SCHEMA = {
     desc: 'Numerical algorithm settings.',
     required: false,
     fields: [
-      { key: 'ifsmoothextfields', label: 'ifsmoothextfields', type: 'bool', dim: 0, default: true, hint: 'Smooth external/analytic fields at init' },
-      { key: 'ifsmoothfields', label: 'ifsmoothfields', type: 'bool', dim: 0, default: true, hint: 'Smooth E/B inside per-step field solver' },
-      { key: 'filternpass', label: 'filternpass', type: 'int', dim: 0, default: 6, hint: 'Number of smoothing passes applied to the deposited density and velocity each step to reduce particle noise' },
-      { key: 'subniter', label: 'subniter', type: 'int', dim: 0, default: 8, hint: 'Sub-iterations for the field solver' },
+      { key: 'ifsmoothextfields', label: 'ifsmoothextfields', type: 'bool', dim: 0, default: false, hint: 'Smooth external/analytic fields at init' },
+      { key: 'ifsmoothfields', label: 'ifsmoothfields', type: 'bool', dim: 0, default: false, hint: 'Smooth E/B inside per-step field solver' },
+      { key: 'filternpass', label: 'filternpass', type: 'int', dim: 0, default: 0, hint: 'Number of smoothing passes applied to the deposited density and velocity each step to reduce particle noise' },
+      { key: 'subniter', label: 'subniter', type: 'int', dim: 0, default: 4, hint: 'Sub-iterations for the field solver' },
       { key: 'e_rtol', label: 'e_rtol', type: 'real', dim: 0, default: 0.001, hint: 'Electric-field solver tolerance: the sub-iterations stop when max|dE| <= e_atol + e_rtol max|E|' },
       { key: 'e_atol', label: 'e_atol', type: 'real', dim: 0, default: 0, hint: 'Absolute part of the electric-field solver tolerance (0 = relative only)' },
     ]
