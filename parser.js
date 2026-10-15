@@ -104,6 +104,19 @@ function parseInputFile(text) {
     }
   }
 
+  // Older files keep K and gamma in grid_space; the code now reads them from
+  // fluid_electrons (Te = K, the electron temperature at n = 1).
+  if (!result.fluid_electrons) {
+    const gridSpace = sections.find(s => s.name === 'grid_space');
+    const rawK = gridSpace && stripComments(gridSpace.body).match(/(?:^|[^a-z_])K\s*=\s*([^,\s!}]+)/i);
+    const gamma = gridSpace ? assignedNumber(gridSpace.body, 'gamma') : null;
+    if (rawK || gamma !== null) {
+      result.fluid_electrons = { closure: 'polytropic' };
+      if (rawK) result.fluid_electrons.Te = rawK[1];
+      if (gamma !== null) result.fluid_electrons.gamma = gamma;
+    }
+  }
+
   return result;
 }
 

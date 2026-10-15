@@ -24,13 +24,11 @@ const SCHEMA = {
     desc: 'Simulation time stepping parameters.',
     required: true,
     fields: [
-      { key: 'dt', label: 'dt', type: 'real', dim: 0, default: 0.0025, hint: 'Time step (initial if adaptive_dt)' },
+      { key: 'dt', label: 'dt', type: 'real', dim: 0, default: 0.0025, hint: 'Time step' },
       { key: 'niter', label: 'niter', type: 'int', dim: 0, default: 2000, hint: 'Number of iterations (-1=use tend)' },
       { key: 'tend', label: 'tend', type: 'real', dim: 0, default: -1.0, hint: 'End time (-1=use niter)' },
       { key: 'stiter', label: 'stiter', type: 'int', dim: 0, default: 0, hint: 'Starting iteration number' },
       { key: 'c', label: 'c', type: 'real', dim: 0, default: 100.0, hint: 'Speed of light' },
-      { key: 'adaptive_dt', label: 'adaptive_dt', type: 'bool', dim: 0, default: false, hint: 'Adaptive time stepping' },
-      { key: 'cfl_factor', label: 'cfl_factor', type: 'real', dim: 0, default: 0.5, hint: 'CFL safety factor (used with adaptive_dt)' },
     ]
   },
 
@@ -48,11 +46,25 @@ const SCHEMA = {
         dimLabels: ['Lx','Ly','Lz'] },
       { key: 'bdtype', label: 'bdtype', type: 'strarr', dim: 'DIM2',
         default: ['per','per','per','per','per','per'],
-        options: ['per','reflect','open'],
-        hint: 'Boundary types: xl, xr, yl, yr, zl, zr',
+        options: ['per','reflect','open','pec','pmc','mirror'],
+        hint: 'Field boundary types: xl, xr, yl, yr, zl, zr (pec: perfect electric conductor; pmc or mirror: perfect magnetic conductor)',
         dimLabels: ['x\u2097','x\u1d63','y\u2097','y\u1d63','z\u2097','z\u1d63'] },
-      { key: 'K', label: 'K', type: 'real', dim: 0, default: 1.0, hint: 'Constant K in the electron pressure equation of state P_e = K nᵞ' },
-      { key: 'gamma', label: 'gamma', type: 'real', dim: 0, default: 1.67, hint: 'Adiabatic index γ in the electron pressure equation of state P_e = K nᵞ' },
+    ]
+  },
+
+  fluid_electrons: {
+    namelist: 'nl_fluid_electrons',
+    label: 'Fluid Electrons',
+    desc: 'Electron closure: polytropic P_e = Te n^gamma from the density, or the evolved electron pressure equation with heat conduction.',
+    required: true,
+    fields: [
+      { key: 'closure', label: 'closure', type: 'str', dim: 0, default: 'polytropic', options: ['polytropic','evolved'],
+        hint: 'polytropic: P_e = Te n^gamma; evolved: P_e advanced by the electron energy equation' },
+      { key: 'Te', label: 'Te', type: 'str', dim: 0, default: '1.', fparser: true,
+        hint: 'Electron temperature at n = 1 (m_p v_A^2): a number for the polytrope; for the evolved closure an expression in x, y, z and n giving the initial temperature' },
+      { key: 'gamma', label: 'gamma', type: 'real', dim: 0, default: 1.67, hint: 'Adiabatic index of the electrons (both closures)' },
+      { key: 'kappa', label: 'kappa', type: 'real', dim: 0, default: 0, requires: { section: 'fluid_electrons', key: 'closure', value: 'evolved' },
+        hint: 'Electron heat conductivity (evolved closure only; 0 = no conduction)' },
     ]
   },
 
@@ -234,6 +246,8 @@ const SCHEMA = {
         default: [false,false],
         hint: 'Current: intensity, vector',
         dimLabels: ['|J|','J\u20d7'] },
+      { key: 'dmp_pefld', label: 'dmp_pefld', type: 'bool', dim: 0, default: false, requires: { section: 'fluid_electrons', key: 'closure', value: 'evolved' },
+        hint: 'Electron pressure and temperature dumps (P_e, T_e); evolved closure only' },
     ]
   },
 
@@ -243,14 +257,12 @@ const SCHEMA = {
     desc: 'Numerical algorithm settings.',
     required: false,
     fields: [
-      { key: 'ifsmooth', label: 'ifsmooth', type: 'bool', dim: 0, default: true, locked: true, hint: 'Master smoothing switch (gates all Smooth() calls). Hardcoded to .true. in the codebase.' },
       { key: 'ifsmoothextfields', label: 'ifsmoothextfields', type: 'bool', dim: 0, default: true, hint: 'Smooth external/analytic fields at init' },
       { key: 'ifsmoothfields', label: 'ifsmoothfields', type: 'bool', dim: 0, default: true, hint: 'Smooth E/B inside per-step field solver' },
       { key: 'filternpass', label: 'filternpass', type: 'int', dim: 0, default: 6, hint: 'Number of smoothing passes applied to the deposited density and velocity each step to reduce particle noise' },
-      { key: 'compensate', label: 'compensate', type: 'bool', dim: 0, default: false, locked: true, hint: 'Use the 5-point compensating filter instead of the 3-point binomial. Hardcoded to .false. in the codebase.' },
       { key: 'subniter', label: 'subniter', type: 'int', dim: 0, default: 8, hint: 'Sub-iterations for the field solver' },
-      { key: 'allowederror', label: 'allowederror', type: 'real', dim: 0, default: 1.0, hint: 'Field-solver convergence tolerance: stops sub-iterating once the field\'s change drops below it' },
-      { key: 'resistivity', label: 'resistivity', type: 'real', dim: 0, default: 0, hint: 'Resistivity η in Ohm\'s law' },
+      { key: 'e_rtol', label: 'e_rtol', type: 'real', dim: 0, default: 0.001, hint: 'Electric-field solver tolerance: the sub-iterations stop when max|dE| <= e_atol + e_rtol max|E|' },
+      { key: 'e_atol', label: 'e_atol', type: 'real', dim: 0, default: 0, hint: 'Absolute part of the electric-field solver tolerance (0 = relative only)' },
     ]
   },
 
@@ -288,7 +300,7 @@ const SCHEMA = {
     required: true, perSpecies: true,
     groups: [
       { title: 'Basic', keys: ['name','dist','num_par','spare_size','ir','mass_to_charge_ratio'] },
-      { title: 'Velocity (γ*v)', keys: ['vdrift','vth','vth_par','vsp','vnorm','pl_slope','pl_min','pl_max'] },
+      { title: 'Velocity (γ*v)', keys: ['vdrift','vth','vth_par','vsp','pl_slope','pl_min','pl_max'] },
       { title: 'Density', keys: ['nsp','nsp_domain','domain_boundary','n_constants','ct'] },
       { title: 'Tracking', keys: ['follow','chk_dup','chk_mpi_balance','chk_test_boundaries'] },
     ],
@@ -308,8 +320,6 @@ const SCHEMA = {
       { key: 'vsp', label: 'vsp', type: 'strarr', dim: 'VDIM_STR',
         default: ['','',''], fparser: true, hint: 'Velocity (γ*v) expressions. Overrides vdrift when set. Empty = use vdrift.',
         dimLabels: ['vsp_x','vsp_y','vsp_z'] },
-      { key: 'vnorm', label: 'vnorm', type: 'real', dim: 'VDIM',
-        default: [1,1,1], hint: 'Velocity direction', dimLabels: ['x','y','z'] },
       { key: 'pl_slope', label: 'pl_slope', type: 'real', dim: 0, default: -4.0, hint: 'Power-law slope (only for dist=POWERLAW)' },
       { key: 'pl_min', label: 'pl_min', type: 'real', dim: 0, default: 1.0, hint: 'Power-law minimum momentum (POWERLAW only; requires 0 < pl_min < pl_max)', advanced: true },
       { key: 'pl_max', label: 'pl_max', type: 'real', dim: 0, default: 1000.0, hint: 'Power-law maximum momentum (POWERLAW only; requires 0 < pl_min < pl_max)', advanced: true },
@@ -335,10 +345,9 @@ const SCHEMA = {
     fields: [
       { key: 'bdtype', label: 'bdtype', type: 'strarr', dim: 'DIM2',
         default: ['per','per','per','per','per','per'],
-        options: ['per','therm','reflect','open','fauxshock'],
+        options: ['per','reflect','open'],
         hint: 'Boundary types',
         dimLabels: ['x\u2097','x\u1d63','y\u2097','y\u1d63','z\u2097','z\u1d63'] },
-      { key: 'vth', label: 'vth', type: 'real', dim: 0, default: 0, hint: 'Thermal bath velocity (v)' },
       { key: 'vsh', label: 'vsh', type: 'real', dim: 0, default: 0, hint: 'Shift velocity (v)' },
       { key: 'compress_ratio', label: 'compress_ratio', type: 'real', dim: 0, default: 1.0, hint: 'Shock compression ratio for the thermal/faux-shock boundary' },
     ]
@@ -512,7 +521,7 @@ const PRESETS = [
       ext_emf: { Bx: '1.', By: '0.', Bz: '0.' },
       algorithm: { filternpass: 1, ifsmoothextfields: true },
       species: [{ vdrift: [-220,0,0], vth: 1, num_par: [2,2] }],
-      boundary_conditions: [{ bdtype: ['reflect','open','per','per'], vth: 0 }],
+      boundary_conditions: [{ bdtype: ['reflect','open','per','per'] }],
       plasma_injector: [[{ plane: 'yz', planepos: 64, boundary: [0,64], vdrift: [-30,0,0], vth: 1, num_par: [2,2] }]],
       diag_species: [{ xres: [128,128] }],
       restart: { restart_step: -1, restart_time: 7200, restart_time_step: 100 },
@@ -530,7 +539,7 @@ const PRESETS = [
       ext_emf: { Bx: '1.', By: '0.', Bz: '0.' },
       algorithm: { filternpass: 1, ifsmoothextfields: true },
       species: [{ vdrift: [-220,0,0], vth: 1, num_par: [2,2,2] }],
-      boundary_conditions: [{ bdtype: ['reflect','open','per','per','per','per'], vth: 0 }],
+      boundary_conditions: [{ bdtype: ['reflect','open','per','per','per','per'] }],
       plasma_injector: [[{ plane: 'yz', planepos: 32, boundary: [0,0,32,32], vdrift: [-30,0,0], vth: 1, num_par: [2,2,2] }]],
       diag_species: [{ xres: [64,64,64] }],
       restart: { restart_step: -1, restart_time: 7200, restart_time_step: 100 },
@@ -542,7 +551,7 @@ const PRESETS = [
     dim: 2,
     values: {
       node_conf: { node_number: [1,1] },
-      time: { dt: 0.001768, niter: -1, tend: 256, c: 100, adaptive_dt: true, cfl_factor: 0.5 },
+      time: { dt: 0.001768, niter: -1, tend: 256, c: 100 },
       grid_space: { ncells: [256,32], boxsize: [128,16], bdtype: ['per','per','per','per'] },
       global_output: { ndump: -1, tdump: 1.0, output_folder: 'Output' },
       ext_emf: { Bx: '1.', By: '0.', Bz: '0.' },

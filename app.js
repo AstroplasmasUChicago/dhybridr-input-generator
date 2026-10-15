@@ -415,6 +415,7 @@
         if (!field) continue;
         // Build-specific fields only render for the matching build target.
         if (field.build && field.build !== currentBuild) continue;
+        if (!fieldRequirementMet(field, state)) continue;
         html += buildFieldRow(skey, field, speciesIdx);
       }
       html += `</div>`;
@@ -569,8 +570,8 @@
     const arrSize = getArraySize(field.dim, currentDim);
     const dimClass = getDimVisibilityClass(field);
 
-    // A locked field is pinned to its default value (e.g. ifsmooth/compensate are
-    // hardcoded in the solver). A locked control shows the value but is disabled.
+    // A locked field is pinned to its default value. A locked control shows the
+    // value but is disabled.
     const forcedVal = field.locked ? field.default : undefined;
     const isLocked = forcedVal !== undefined;
     const lockAttr = isLocked ? ' disabled' : '';
@@ -1228,12 +1229,18 @@
           renderNodeOptimizer();
         }
 
+        // The closure decides which fluid_electrons and field_diag fields exist.
+        if (elSection === 'fluid_electrons' && elKey === 'closure') {
+          buildSections();
+          loadStateToUI();
+          setActiveSection(activeSection);
+        }
+
         // Section validations
         if (elSection === 'grid_space') validateSection('grid_space');
         if (elSection === 'time') {
           validateSection('time');
-          validateSection('global_output'); // ndump vs niter, adaptive_dt
-          validateSection('raw_diag'); // adaptive_dt
+          validateSection('global_output'); // ndump vs niter
         }
         if (elSection === 'global_output') {
           validateSection('global_output');
@@ -1717,8 +1724,6 @@
 
   // ---- Auto-update dt using CFL: dt = 0.5 / (c * sqrt(sum(1/dx_i^2))) ----
   function autoUpdateDt() {
-    // Skip auto-update when adaptive_dt is enabled — Fortran manages dt
-    if (state.time?.adaptive_dt) return;
     const ncells = state.grid_space?.ncells || [];
     const boxsize = state.grid_space?.boxsize || [];
     const c = parseFloat(state.time?.c) || 100;
@@ -4581,7 +4586,6 @@
       const niter = Number(state.time?.niter);
       const tend = parseFloat(state.time?.tend);
       const stiter = Number(state.time?.stiter) || 0;
-      const adaptiveDt = state.time?.adaptive_dt;
       const niterDisabled = isNaN(niter) || niter < 0;
       const tendDisabled = isNaN(tend) || tend < 0;
 
@@ -4597,19 +4601,9 @@
       if (!niterDisabled && stiter >= niter && stiter > 0) {
         warnings.push(`stiter (${stiter}) ≥ niter (${niter}) — simulation will never start`);
       }
-      if (adaptiveDt) {
-        const cflFactor = parseFloat(state.time?.cfl_factor) || 0;
-        if (cflFactor <= 0 || cflFactor > 1) {
-          warnings.push(`cfl_factor = ${cflFactor} — should be in (0, 1]`);
-        }
-        if (tendDisabled && !niterDisabled) {
-          warnings.push('adaptive_dt with niter: niter may not reflect actual simulation time — consider using tend instead');
-        }
-      }
     }
 
     if (skey === 'global_output') {
-      const adaptiveDt = state.time?.adaptive_dt;
       const niter = Number(state.time?.niter);
       const ndump = Number(state.global_output?.ndump) || 0;
       const tdump = parseFloat(state.global_output?.tdump);
@@ -4619,11 +4613,9 @@
       if (niter > 0 && ndumpSet && ndump > niter) warnings.push(`ndump (${ndump}) > niter (${niter}) — no diagnostics will be written`);
       if (ndumpSet && tdumpSet) warnings.push('Both ndump and tdump are set — the code will refuse to start. Set one to -1');
       if (!ndumpSet && !tdumpSet) warnings.push('Both ndump and tdump are disabled — no diagnostics will be written');
-      if (adaptiveDt && ndumpSet && !tdumpSet) warnings.push('adaptive_dt is on — use tdump instead of ndump (dt varies each step)');
     }
 
     if (skey === 'raw_diag') {
-      const adaptiveDt = state.time?.adaptive_dt;
       const ndump = Number(state.global_output?.ndump) || 0;
       const spIdx = activeSpeciesIdx['raw_diag'] || 0;
       const data = state.raw_diag?.[spIdx];
@@ -4636,7 +4628,6 @@
       if (ndump > 0 && rawNdumpSet && rawNdump % ndump !== 0) {
         warnings.push(`raw_ndump (${rawNdump}) must be a multiple of ndump (${ndump})`);
       }
-      if (adaptiveDt && rawNdumpSet && !rawTdumpSet) warnings.push('adaptive_dt is on — use raw_tdump instead of raw_ndump');
 
       // raw_volume: the code treats -1 as "whole box" only when every value is -1,
       // and an inverted box selects nothing (no raw file, no message).

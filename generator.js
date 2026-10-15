@@ -1,5 +1,13 @@
 // Generate dHybridR Fortran namelist input file from form state
 
+// A field with `requires` exists only while another section's key has the given
+// value (kappa and dmp_pefld belong to the evolved electron closure); the code
+// rejects it otherwise, so it is neither shown nor emitted.
+function fieldRequirementMet(field, state) {
+  if (!field.requires) return true;
+  return state?.[field.requires.section]?.[field.requires.key] === field.requires.value;
+}
+
 function generateInputFile(state, dim, build) {
   const lines = [];
   const hr = '!------';
@@ -17,7 +25,7 @@ function generateInputFile(state, dim, build) {
   // Output order matches ReadInputFile call order (initialize.f90). ReadAscent runs
   // right after ReadGlobalOutput and before ReadRestart, so ascent{} goes there.
   const globalSections = [
-    'node_conf', 'time', 'grid_space', 'global_output', 'ascent', 'restart',
+    'node_conf', 'time', 'grid_space', 'fluid_electrons', 'global_output', 'ascent', 'restart',
     'ext_emf', 'ext_force', 'field_diag', 'algorithm', 'loadbalance', 'particles',
   ];
   const perSpeciesSections = [
@@ -30,7 +38,7 @@ function generateInputFile(state, dim, build) {
     const data = state[skey];
     if (!sec || !data) continue;
     if (sec.enabled === false && !data._enabled) continue;
-    lines.push(...formatSection(sec, skey, data, dim, build));
+    lines.push(...formatSection(sec, skey, data, dim, build, state));
     lines.push('');
   }
 
@@ -48,13 +56,13 @@ function generateInputFile(state, dim, build) {
         for (let inj = 0; inj < injectors.length; inj++) {
           const data = injectors[inj] || {};
           if (sec.enabled === false && !data._enabled) continue;
-          lines.push(...formatSection(sec, skey, data, dim, build, sp+1, inj+1));
+          lines.push(...formatSection(sec, skey, data, dim, build, state, sp+1, inj+1));
           lines.push('');
         }
       } else {
         const data = dataArr[sp] || {};
         if (sec.enabled === false && !data._enabled) continue;
-        lines.push(...formatSection(sec, skey, data, dim, build, sp+1));
+        lines.push(...formatSection(sec, skey, data, dim, build, state, sp+1));
         lines.push('');
       }
     }
@@ -63,7 +71,7 @@ function generateInputFile(state, dim, build) {
   return lines.join('\n');
 }
 
-function formatSection(sec, skey, data, dim, build, speciesNum, injectorNum) {
+function formatSection(sec, skey, data, dim, build, state, speciesNum, injectorNum) {
   const lines = [];
   // Section name mapping: namelist nl_X reads input section X
   const sectionName = sec.namelist.replace('nl_', '');
@@ -79,6 +87,7 @@ function formatSection(sec, skey, data, dim, build, speciesNum, injectorNum) {
     // Build-specific fields (e.g. gpu_mem_frac on GPU, spare_size on CPU) are
     // only emitted for the matching build target; the other build rejects them.
     if (field.build && field.build !== build) continue;
+    if (!fieldRequirementMet(field, state)) continue;
     let val = data[field.key];
     // A locked field is pinned to its default value regardless of the deck
     // (e.g. ifsmooth/compensate are hardcoded in the solver).
