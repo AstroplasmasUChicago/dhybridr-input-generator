@@ -59,9 +59,9 @@ const SCHEMA = {
     required: true,
     fields: [
       { key: 'closure', label: 'closure', type: 'str', dim: 0, default: 'polytropic', options: ['polytropic','evolved'],
-        hint: 'polytropic: P_e = Te n^gamma from the density; evolved: P_e advanced by the electron pressure evolution equation' },
+        hint: 'polytropic: P_e = Te n^gamma with n the electron density; evolved: P_e advanced by the electron pressure evolution equation' },
       { key: 'Te', label: 'Te', type: 'str', dim: 0, default: '1.', fparser: true,
-        hint: 'Electron temperature at n = 1 (m_p v_A^2): a number for the polytrope; for the evolved closure an expression in x, y, z and n giving the initial temperature' },
+        hint: 'Electron temperature at n = 1 (m_p v_A^2): a number for the polytrope; for the evolved closure an expression in x, y, z and n, the electron density, giving the initial temperature' },
       { key: 'gamma', label: 'gamma', type: 'real', dim: 0, default: 1.67, hint: 'Adiabatic index of the electrons (both closures)' },
       { key: 'kappa', label: 'kappa', type: 'real', dim: 0, default: 0, requires: { section: 'fluid_electrons', key: 'closure', value: 'evolved' },
         hint: 'Electron heat conductivity (evolved closure only; 0 = no conduction)' },
