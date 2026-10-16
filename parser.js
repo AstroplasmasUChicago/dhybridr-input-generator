@@ -108,7 +108,7 @@ function parseInputFile(text, options = {}) {
 function convertInputSections(sections, options = {}) {
   const report = [], result = { _dim: options.dim || null, _build: options.build || null, _report: report };
   let species = -1;
-  const counts = {}, globals = new Set();
+  const counts = {};
   for (const section of sections) {
     const schema = SCHEMA[section.name];
     if (!schema) throw new Error(`Line ${section.line}: unknown section ${section.name}.`);
@@ -120,7 +120,6 @@ function convertInputSections(sections, options = {}) {
     if (!schema.multiPerSpecies && counts[scope] > 1) throw new Error(`Line ${section.line}: duplicate ${section.name} section.`);
     section.injector = schema.multiPerSpecies ? counts[scope] - 1 : undefined;
     section.context = schema.perSpecies ? `Species ${species + 1}${schema.multiPerSpecies ? `, injector ${section.injector + 1}` : ` ${section.name}`}` : section.name;
-    if (!schema.perSpecies) globals.add(section.name);
     const shapes = section.assignments.filter(a => ['ranks','node_number','n_cells','ncells'].includes(a.name.toLowerCase()));
     for (const shape of shapes) {
       const start = Number(shape.indices?.match(/^\s*(\d+)/)?.[1] || 1);
@@ -132,7 +131,10 @@ function convertInputSections(sections, options = {}) {
   result._dim ||= 2;
   const electron = sections.find(s => s.name === 'fluid_electrons');
   const closureValue = electron?.assignments.find(a => a.name.toLowerCase() === 'closure');
-  const closure = closureValue ? splitInputValues(closureValue.raw)[0]?.value.toLowerCase() : 'polytropic';
+  const legacyElectrons = sections.some(section => section.assignments.some(a =>
+    (section.name === 'grid_space' && ['k', 'gamma'].includes(a.name.toLowerCase())) ||
+    (section.name === 'fluid_electrons' && a.name.toLowerCase() === 'gamma')));
+  const closure = closureValue ? splitInputValues(closureValue.raw)[0]?.value.toLowerCase() : legacyElectrons ? 'polytropic' : inputField('fluid_electrons', 'closure').default;
   const distributions = sections.filter(s => s.name === 'species').map(s => {
     const a = s.assignments.find(a => ['dist','distribution'].includes(a.name.toLowerCase()));
     return a ? splitInputValues(a.raw)[0]?.value.toLowerCase() : 'thermal';
@@ -268,7 +270,7 @@ function convertInputSections(sections, options = {}) {
       }
     }
   }
-  if (result.fluid_electrons && !globals.has('fluid_electrons')) {
+  if (legacyElectrons && !closureValue && result.fluid_electrons) {
     result.fluid_electrons.closure = 'polytropic'; result.fluid_electrons._present.push('closure');
   }
   validateImportedState(result);
@@ -276,7 +278,7 @@ function convertInputSections(sections, options = {}) {
 }
 
 function validateImportedState(state) {
-  const closure = (state.fluid_electrons?.closure || 'polytropic').toLowerCase();
+  const closure = (state.fluid_electrons?.closure || inputField('fluid_electrons', 'closure').default).toLowerCase();
   if (!['polytropic','evolved'].includes(closure)) throw new Error(`Unknown electron closure ${closure}.`);
   const count = state.particles?.n_species;
   if (count !== undefined && (!Number.isInteger(count) || count < 1 || (state.species || []).length !== count)) throw new Error('n_species must match the number of species blocks.');
@@ -286,7 +288,7 @@ function validateImportedState(state) {
       if (!data) continue;
       for (const field of schema.fields) {
         if (!data._present.includes(field.key)) continue;
-        if (!fieldRequirementMet(field, state, sp)) throw new Error(`${section}.${field.key} does not apply to the selected closure/distribution.`);
+        if (!fieldRequirementMet(field, state, sp) && !field.inactiveAllowed) throw new Error(`${section}.${field.key} does not apply to the selected closure/distribution.`);
         if (field.options && !Array.isArray(data[field.key]) && !field.options.some(v => v.toLowerCase() === String(data[field.key]).toLowerCase())) throw new Error(`${section}.${field.key}: unsupported value ${data[field.key]}.`);
       }
       if (data.buffer_headroom < 0) throw new Error('species.buffer_headroom must be nonnegative; remove the retired GPU sentinel.');
@@ -301,16 +303,26 @@ function parseSavedPreset(preset) {
   const sections = [];
   const dim = preset.dim || 2;
   const applicability = { ...preset.values, species: (preset.values.species || []).map(data => ({ ...data, distribution: data.distribution ?? data.dist ?? 'thermal' })) };
+  // Historical electron keys select polytropic applicability before filtering fields.
+  const legacyElectrons = ['grid_space', 'fluid_electrons'].some(section => {
+    const data = preset.values[section];
+    return data && data._included !== false && data._enabled !== false && Object.keys(data).some(name =>
+      data[name] != null && (!data._present || data._present.includes(name)) &&
+      (name.toLowerCase() === 'gamma' || (section === 'grid_space' && name.toLowerCase() === 'k')));
+  });
+  if (legacyElectrons && !applicability.fluid_electrons?.closure) {
+    applicability.fluid_electrons = { ...applicability.fluid_electrons, closure: 'polytropic' };
+  }
   function add(section, data, speciesIndex) {
     if (!data || data._included === false || data._enabled === false) return;
     const assignments = [];
     for (const [name, value] of Object.entries(data)) {
-      if (name.startsWith('_') || (data._present && !data._present.includes(name))) continue;
-      const oldElectronTe = section === 'fluid_electrons' && name.toLowerCase() === 'te' && !Object.hasOwn(data, 'Ke') && String(data.closure || 'polytropic').toLowerCase() === 'polytropic';
+      if (value == null || name.startsWith('_') || (data._present && !data._present.includes(name))) continue;
+      const oldElectronTe = section === 'fluid_electrons' && name.toLowerCase() === 'te' && !Object.hasOwn(data, 'Ke') && String(applicability.fluid_electrons?.closure || inputField('fluid_electrons', 'closure').default).toLowerCase() === 'polytropic';
       const target = oldElectronTe ? { section, name: 'Ke' } : inputName(section, name);
       const field = inputField(target?.section || section, target?.name || name);
       if (field?.build && preset.build && field.build !== preset.build) continue;
-      if (field && !fieldRequirementMet(field, applicability, speciesIndex)) continue;
+      if (field && !fieldRequirementMet(field, applicability, speciesIndex) && !field.inactiveAllowed) continue;
       const listed = field?.key === 'phase_spaces' || field?.quotedList;
       let values = listed ? String(value).split(',') : Array.isArray(value) ? value : [value];
       if (!values.length) continue;

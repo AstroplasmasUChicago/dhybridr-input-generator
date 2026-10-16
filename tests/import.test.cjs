@@ -42,7 +42,7 @@ for (const boundary of ['per', 'reflect', 'open']) {
 let mappings=0;
 for(const entry of registry.keys)for(const old of entry.old){
  const field=schema[entry.section].fields.find(f=>f.key===entry.name);
- let value=field.default;
+ let value=field.editor_initial_value ?? field.default ?? (field.inherit ? (field.dim === 'DIM' ? [4,4,4] : 1) : undefined);
  if(field.dim==='VARIABLE')value=[2,0];
  if(field.key==='phase_spaces')value='x3x2x1';
  if(field.key==='n_species')value=1;
@@ -50,7 +50,7 @@ for(const entry of registry.keys)for(const old of entry.old){
  const literal=v=>typeof v==='string'?`"${v.replace(/"/g,'""')}"`:typeof v==='boolean'?(v?'.true.':'.false.'):String(v);
  const vals=Array.isArray(value)?value.slice(0,c.getArraySize(field.dim,2)||value.length):[value];
  const prefix=schema[old.section].perSpecies&&old.section!=='species'?'species {} ':'';
- const thermal=field.key==='u_th_parallel'?'distribution="bimaxwellian",':'';
+ const thermal=field.distribution?`distribution="${field.distribution}",`:'';
  const electrons=field.key==='dump_Pe'?'fluid_electrons{closure="evolved"} ':'';
  const suffix=field.key==='n_species'?' species{}':'';
  const body=`${electrons}${prefix}${old.section}{${thermal}${old.name}=${vals.map(literal).join(',')}}${suffix}`;
@@ -70,6 +70,50 @@ for(const [distribution,key]of Object.entries(registry.thermal)){
 assert.equal(round('fluid_electrons{Te="2.5",gamma=1.4}').b.fluid_electrons.Ke,2.5);
 assert.equal(round('fluid_electrons{closure="evolved",Te="x+n",gamma_e=1.4}').b.fluid_electrons.Te,'x+n');
 assert.equal(round('grid_space{K=2.,gamma=1.5}').b.fluid_electrons.Ke,2);
+// Inactive power-law parameters remain loadable but are emitted only for POWERLAW.
+const powerlawValues={pl_slope:-3.5,pl_min_factor:2,pl_max_factor:20};
+for (const distribution of ['thermal','iso','juttner','bimaxwellian','powerlaw']) {
+ const body=`species{distribution="${distribution}",pl_slope=-3.5,pl_min_factor=2,pl_max_factor=20}`;
+ const loaded=c.parseInputFile(body);
+ const saved=c.parseSavedPreset({dim:2,values:{species:[{distribution,...powerlawValues}]}});
+ for (const parsed of [loaded,saved]) {
+  for (const [key,value] of Object.entries(powerlawValues)) assert.equal(parsed.species[0][key],value);
+  const exported=c.generateInputFile(parsed,2,'CPU');
+  for (const key of Object.keys(powerlawValues)) {
+   assert.equal(new RegExp(`\\b${key}=`).test(exported),distribution==='powerlaw');
+  }
+ }
+}
+const mixed=c.parseInputFile('particles{n_species=2}species{distribution="thermal",pl_slope=-3}species{distribution="powerlaw",pl_slope=-5,pl_min_factor=2,pl_max_factor=10}');
+const mixedExport=c.parseInputFile(c.generateInputFile(mixed,2,'CPU'));
+assert.equal(mixedExport.species[0].pl_slope,undefined);
+assert.equal(mixedExport.species[1].pl_slope,-5);
+assert.equal(mixedExport.species[1].pl_min_factor,2);
+assert.equal(mixedExport.species[1].pl_max_factor,10);
+// Inactive loop and forcing settings survive input/preset imports and later activation.
+const conditionalSections=[
+ {section:'ext_emf',controller:'add_loop',off:false,on:true,
+  values:{loop_radius:2,loop_center:[3,4],loop_current:5},
+  input:'ext_emf{add_loop=.false.,loop_radius=2,loop_center=3,4,loop_current=5}'},
+ {section:'ext_force',controller:'drive_type',off:'',on:'TURB',
+  values:{k_min:.25,k_max:.75,mode_amp:2,omega:3,t_decay:4,t_drive_end:5,B_noise_rms:0},
+  input:'ext_force{drive_type="",k_min=.25,k_max=.75,mode_amp=2,omega=3,t_decay=4,t_drive_end=5,B_noise_rms=0}'},
+];
+for (const {section,controller,off,on,values,input} of conditionalSections) {
+ const loaded=c.parseInputFile(input);
+ const saved=c.parseSavedPreset({dim:2,values:{[section]:{[controller]:off,...values}}});
+ for (const parsed of [loaded,saved]) {
+  for (const active of [false,true,false,true]) {
+   parsed[section][controller]=active?on:off;
+   const emitted=c.parseInputFile(c.generateInputFile(parsed,2,'CPU'))[section];
+   for (const [key,value] of Object.entries(values)) {
+    assert.deepEqual(plain(parsed[section][key]),value);
+    assert.equal(emitted._present.includes(key),active,`${section}.${key} active=${active}`);
+    if (active) assert.deepEqual(plain(emitted[key]),value);
+   }
+  }
+ }
+}
 // Each current flag controls one output; the old combined flag preserves both.
 for (const enabled of [true,false]) {
  const literal=enabled?'.true.':'.false.';
@@ -121,6 +165,21 @@ assert.doesNotMatch(c.generateInputFile(app.getState(),2,'CPU'),/\bTe=/);
 app.applyPreset({name:'old-evolved-electrons',dim:2,values:{fluid_electrons:{closure:'evolved',Te:'x+n',gamma:1.4},species:[{}]}});
 assert.equal(app.getState().fluid_electrons.Te,'x+n');
 assert.match(c.generateInputFile(app.getState(),2,'CPU'),/Te="x\+n"/);
+// Old saved electron keys select polytropic fields before applicability filtering.
+for (const values of [
+ {fluid_electrons:{Ke:2.75,gamma:1.4}},
+ {fluid_electrons:{Te:'2.75',gamma:1.4}},
+ {grid_space:{K:2.75,gamma:1.4}},
+ {grid_space:{K:2.75}},
+]) {
+ const converted=c.parseSavedPreset({dim:2,values});
+ assert.equal(converted.fluid_electrons.Ke,2.75);
+ assert.equal(converted.fluid_electrons.closure,'polytropic');
+}
+const canonicalPreset=c.parseSavedPreset({dim:2,values:{fluid_electrons:{Ke:2.75,gamma_e:1.4}}});
+assert.equal(canonicalPreset.fluid_electrons.Ke,undefined);
+assert.equal(canonicalPreset.fluid_electrons.closure,undefined);
+assert.equal(c.parseSavedPreset({dim:2,values:{fluid_electrons:{Te:'x+n',gamma_e:1.4}}}).fluid_electrons.Te,'x+n');
 console.log('PASS: old saved polytropic Te converts to Ke; evolved Te expressions remain unchanged.');
 for (const dimension of [1,2,3]) {
   const {b} = round(`node_conf{ranks=${Array(dimension).fill(1).join(',')}}species{}plasma_injector{transverse_bounds=0.,1.,2.,3.}`);

@@ -125,26 +125,30 @@
         state[key] = buildDefaults(sec);
       }
     }
-    // New inputs use evolved electrons; imports keep the solver's polytropic default.
-    state.fluid_electrons.closure = 'evolved';
+    setInjectorGeometry(state.plasma_injector[0][0]);
   }
 
-  function buildDefaults(sec, dim = currentDim) {
+  function buildDefaults(sec, dim = currentDim, editor = true) {
     const data = {};
     if (sec.enabled === false) data._enabled = false;
     for (const f of sec.fields) {
+      const value = f.inherit ? null : (editor && Object.hasOwn(f, 'editor_initial_value') ? f.editor_initial_value : f.default);
       const arrSize = getArraySize(f.dim, dim);
-      if (f.dim === 'VARIABLE') {
-        data[f.key] = [...f.default];
-      } else if (arrSize > 0) {
-        data[f.key] = (f.default || []).slice(0, arrSize);
-        // Pad if needed
-        while (data[f.key].length < arrSize) data[f.key].push(f.default?.[data[f.key].length] ?? (f.type === 'strarr' ? 'per' : 0));
+      if (Array.isArray(value)) {
+        data[f.key] = f.dim === 'VARIABLE' ? [...value] : value.slice(0, arrSize);
       } else {
-        data[f.key] = f.default;
+        data[f.key] = value ?? null;
       }
     }
     return data;
+  }
+
+  function setInjectorGeometry(data) {
+    const box = (state.grid_space?.box_size || []).map(Number);
+    const axis = {yz: 0, xz: 1, xy: 2}[String(data.plane).toLowerCase()];
+    data.plane_position = box[axis] || 0;
+    const transverse = box.slice(0, currentDim).filter((_, index) => index !== axis);
+    data.transverse_bounds = Array(transverse.length).fill(0).concat(transverse);
   }
 
   function markPresent(data, key, index) {
@@ -167,7 +171,9 @@
       if (!sec.perSpecies) continue;
       if (sec.multiPerSpecies) {
         while (state[key].length < count) {
-          state[key].push([buildDefaults(sec)]);
+          const injector = buildDefaults(sec);
+          if (key === 'plasma_injector') setInjectorGeometry(injector);
+          state[key].push([injector]);
         }
       } else {
         while (state[key].length < count) {
@@ -217,6 +223,7 @@
       if (SCHEMA[key]?.multiPerSpecies) {
         rebuildSpeciesEnableToggle(key);
         rebuildInjectorTabs(key);
+        rebuildInjectorContent(key);
       }
       if (key === 'diag_species') {
         const spIdx = activeSpeciesIdx[key] || 0;
@@ -618,9 +625,12 @@
       inputHTML = `<textarea ${dataAttr} rows="2" placeholder="${field.hint || ''}"${lockAttr}></textarea>`;
     } else {
       const extra = field.type === 'int' ? ' inputmode="numeric" class="int-field"' : '';
-      inputHTML = `<input type="text" ${dataAttr}${extra} placeholder="${field.default ?? ''}"${lockAttr}>`;
+      inputHTML = `<input type="text" ${dataAttr}${extra} placeholder="${field.editor_initial_value ?? field.default ?? ''}"${lockAttr}>`;
     }
 
+    if (field.inherit) {
+      inputHTML = `<label class="checkbox-row"><input type="checkbox" ${dataAttr} data-inherit="true">Use species value</label>` + inputHTML;
+    }
 
     let extraHTML = '';
     if (skey === 'time' && field.key === 'dt') {
@@ -638,7 +648,7 @@
     return `<div class="field-row ${dimClass}${field.locked ? ' field-row-locked' : ''}">
       <div class="field-label">
         <span class="name">${field.label}${fparserBtn}</span>
-        <span class="hint">${field.hint || ''}</span>
+        <span class="hint">${field.required || field.required_if ? 'Required when applicable. ' : ''}${field.hint || ''}</span>
       </div>
       <div class="field-input">${extraHTML}${inputHTML}</div>
     </div>`;
@@ -693,7 +703,7 @@
       html += `<div class="array-col ${dimVis}">`;
       if (labels[i]) html += `<span class="label">${labels[i]}</span>`;
       const extraAttr = field.type === 'int' ? ' inputmode="numeric" class="int-field"' : '';
-      const defVal = Array.isArray(field.default) ? (field.default[i] ?? '') : '';
+      const defVal = (field.editor_initial_value ?? field.default)?.[i] ?? '';
       html += `<input type="text" ${dataAttr} data-index="${i}"${extraAttr} style="width:80px" placeholder="${defVal}">`;
       html += `</div>`;
     }
@@ -907,22 +917,7 @@
         const newInj = buildDefaults(SCHEMA[skey]);
         // Inherit _enabled from existing injectors
         if (injectors.length > 0 && injectors[0]._enabled) newInj._enabled = true;
-        // Snap to right x edge with full transverse_bounds span, inherit species u_th
-        if (skey === 'plasma_injector') {
-          const box_size = (state.grid_space?.box_size || []).map(Number);
-          newInj.plane = 'yz';
-          newInj.plane_position = box_size[0] || 0;
-          const nInPlane = currentDim - 1;
-          const bd = new Array(nInPlane * 2).fill(0);
-          if (nInPlane >= 1) bd[nInPlane] = box_size[1] || 0;
-          if (nInPlane >= 2) bd[nInPlane + 1] = box_size[2] || 0;
-          newInj.transverse_bounds = bd;
-          const spData = state.species?.[spIdx];
-          if (spData) {
-            const scale = INPUT_NAMES.thermal[String(spData.distribution || 'thermal').toLowerCase()];
-            newInj[scale] = spData[scale] ?? newInj[scale];
-          }
-        }
+        if (skey === 'plasma_injector') setInjectorGeometry(newInj);
         injectors.push(newInj);
         activeInjectorIdx[spIdx] = injectors.length - 1;
         rebuildInjectorTabs(skey);
@@ -982,22 +977,16 @@
     cb.dataset.species = String(spIdx);
 
     cb.addEventListener('change', () => {
-      const box_size = (state.grid_space?.box_size || []).map(Number);
       const spArr = state[skey]?.[spIdx];
-      if (cb.checked && Array.isArray(spArr) && !spArr.length) spArr.push(buildDefaults(sec));
+      if (cb.checked && Array.isArray(spArr) && !spArr.length) {
+        const injector = buildDefaults(sec);
+        setInjectorGeometry(injector);
+        spArr.push(injector);
+      }
       if (Array.isArray(spArr)) {
         for (const inj of spArr) {
           inj._enabled = cb.checked;
           inj._included = cb.checked;
-          if (cb.checked && skey === 'plasma_injector') {
-            inj.plane = inj.plane || 'yz';
-            inj.plane_position = box_size[0] || 0;
-            const nInPlane = currentDim - 1;
-            const bd = new Array(nInPlane * 2).fill(0);
-            if (nInPlane >= 1) bd[nInPlane] = box_size[1] || 0;
-            if (nInPlane >= 2) bd[nInPlane + 1] = box_size[2] || 0;
-            inj.transverse_bounds = bd;
-          }
         }
       }
       rebuildSpeciesEnableToggle(skey);
@@ -1045,6 +1034,28 @@
           target = state[elSection] = state[elSection] || {};
         }
 
+        if (el.dataset.inherit) {
+          if (el.checked) {
+            target[elKey] = null;
+            if (target._present) target._present = target._present.filter(key => key !== elKey);
+            if (target._indices) delete target._indices[elKey];
+          } else {
+            const value = resolveInputValue(field, target, state, spIdx);
+            target[elKey] = Array.isArray(value) ? [...value] : value;
+            markPresent(target, elKey);
+          }
+          loadDataToInputs(elSection, target, spIdx);
+          updatePreview();
+          return;
+        }
+
+        if (elKey === '_enabled' && el.checked && target._included === false) {
+          Object.assign(target, buildDefaults(sec));
+          delete target._present;
+          delete target._indices;
+        }
+        const addedDiagnostics = elSection === 'diag_species' && target._included === false && elKey !== 'phase_spaces';
+        if (addedDiagnostics) target.phase_spaces = sec.fields.find(field => field.key === 'phase_spaces').default;
         target._included = true;
         if (target._present && elKey !== '_enabled' && !target._present.includes(elKey)) target._present.push(elKey);
         if (arrIdx !== undefined && target._indices) {
@@ -1056,23 +1067,11 @@
         if (elKey === '_enabled') {
           if (sec.multiPerSpecies) {
             // Set _enabled on all injectors for the toggled species only
-            const box_size = (state.grid_space?.box_size || []).map(Number);
             const targetSpIdx = spIdx !== undefined ? spIdx : activeSpeciesIdx[elSection] || 0;
             const spArr = state[elSection]?.[targetSpIdx];
             if (Array.isArray(spArr)) {
               for (const inj of spArr) {
                 inj._enabled = el.checked;
-                if (el.checked && elSection === 'plasma_injector') {
-                  // Default: yz plane at right x edge, transverse_bounds spans full box
-                  inj.plane = inj.plane || 'yz';
-                  inj.plane_position = box_size[0] || 0;
-                  const nInPlane = currentDim - 1;
-                  const bd = new Array(nInPlane * 2).fill(0);
-                  // ends are at indices [nInPlane .. 2*nInPlane-1]
-                  if (nInPlane >= 1) bd[nInPlane] = box_size[1] || 0;     // end_y
-                  if (nInPlane >= 2) bd[nInPlane + 1] = box_size[2] || 0; // end_z
-                  inj.transverse_bounds = bd;
-                }
               }
             }
             // Refresh UI
@@ -1147,6 +1146,8 @@
             target[elKey] = el.value;
           }
         }
+
+        if (addedDiagnostics) loadDataToInputs(elSection, target, spIdx);
 
         // Special: n_species changed
         if (elKey === 'n_species') {
@@ -1268,12 +1269,19 @@
           renderNodeOptimizer();
         }
 
-        // The closure decides which fluid_electrons and field_diag fields exist.
-        if ((elSection === 'fluid_electrons' && elKey === 'closure') || (elSection === 'species' && elKey === 'distribution')) {
+        // Rebuild dependent controls when their selection changes.
+        if ((elSection === 'fluid_electrons' && elKey === 'closure') ||
+            (elSection === 'species' && elKey === 'distribution') ||
+            (elSection === 'ext_emf' && elKey === 'add_loop') ||
+            (elSection === 'ext_force' && elKey === 'drive_type')) {
           const parameter = elSection === 'fluid_electrons'
             ? (String(target.closure).toLowerCase() === 'polytropic' ? 'Ke' : 'Te')
-            : INPUT_NAMES.thermal[String(target.distribution).toLowerCase()];
-          if (parameter) markPresent(target, parameter);
+            : elSection === 'species' ? INPUT_NAMES.thermal[String(target.distribution).toLowerCase()] : undefined;
+          if (parameter) {
+            const definition = sec.fields.find(field => field.key === parameter);
+            if (target[parameter] == null) target[parameter] = definition.editor_initial_value ?? definition.default;
+            markPresent(target, parameter);
+          }
           buildSections();
           loadStateToUI();
           setActiveSection(activeSection);
@@ -1376,16 +1384,23 @@
       if (field.locked) {
         val = field.default;
       }
-      if (val === undefined) continue;
+      if (val == null) val = getArraySize(field.dim, currentDim) > 0 ? Array(getMaxArraySize(field.dim)).fill('') : '';
 
       const selector = speciesIdx !== undefined
         ? `[data-section="${skey}"][data-key="${field.key}"][data-species="${speciesIdx}"]`
         : `[data-section="${skey}"][data-key="${field.key}"]:not([data-species])`;
 
       const arrSize = getArraySize(field.dim, currentDim);
+      if (field.inherit) {
+        const inherited = data[field.key] == null;
+        const toggle = document.querySelector(`${selector}[data-inherit]`);
+        if (toggle) toggle.checked = inherited;
+        document.querySelectorAll(`${selector}:not([data-inherit])`).forEach(el => { el.disabled = inherited; });
+        val = resolveInputValue(field, data, state, speciesIdx) ?? (arrSize ? [] : '');
+      }
 
       if (field.dim === 'VARIABLE') {
-        const el = document.querySelector(selector);
+        const el = document.querySelector(`${selector}:not([data-inherit])`);
         if (el) el.value = val.join(', ');
       } else if (arrSize > 0 && Array.isArray(val)) {
         // Array inputs
@@ -1425,7 +1440,7 @@
         });
       } else {
         // Scalar
-        const els = document.querySelectorAll(selector + ':not([data-index]):not([data-phase])');
+        const els = document.querySelectorAll(selector + ':not([data-index]):not([data-phase]):not([data-inherit])');
         els.forEach(el => {
           if (field.type === 'bool') {
             el.checked = !!val;
@@ -1443,10 +1458,10 @@
     // Update DIM-dependent array sizes in state
     for (const [key, sec] of Object.entries(SCHEMA)) {
       if (sec.multiPerSpecies) {
-        for (const spArr of state[key]) {
+        for (const [spIdx, spArr] of state[key].entries()) {
           if (Array.isArray(spArr)) {
             for (const injData of spArr) {
-              adjustDimArrays(sec, injData);
+              adjustDimArrays(sec, injData, spIdx);
             }
           }
         }
@@ -1648,17 +1663,18 @@
     (container || document).querySelectorAll('select').forEach(upgradeSelect);
   }
 
-  function adjustDimArrays(sec, data) {
+  function adjustDimArrays(sec, data, speciesIndex = 0) {
     if (!data) return;
     for (const field of sec.fields) {
       const newSize = getArraySize(field.dim, currentDim);
       const maxSize = getMaxArraySize(field.dim);
       if (newSize > 0 && Array.isArray(data[field.key])) {
+        const fallback = field.inherit ? resolveInputValue(field, data, state, speciesIndex) : field.editor_initial_value ?? field.default;
         if (data._indices && ['DIM', 'DIM2', 'BDIM'].includes(field.dim)) delete data._indices[field.key];
         // A dimension edit materializes every displayed array entry.
         for (let i = 0; i < newSize; i++) {
           if (data[field.key][i] === undefined || data[field.key][i] === null) {
-            data[field.key][i] = field.default?.[i] ?? (field.type === 'strarr' ? 'per' : 0);
+            data[field.key][i] = fallback?.[i] ?? (field.type === 'strarr' ? 'per' : 0);
           }
         }
       }
@@ -4638,7 +4654,7 @@
 
     if (skey === 'time') {
       const c = Number(state.time?.c) || 0;
-      const n_steps = Number(state.time?.n_steps);
+      const n_steps = Number(state.time?.n_steps ?? -1);
       const t_end = parseFloat(state.time?.t_end);
       const stiter = Number(state.time?.stiter) || 0;
       const niterDisabled = isNaN(n_steps) || n_steps < 0;
@@ -4659,7 +4675,7 @@
     }
 
     if (skey === 'global_output') {
-      const n_steps = Number(state.time?.n_steps);
+      const n_steps = Number(state.time?.n_steps ?? -1);
       const dump_every = Number(state.global_output?.dump_every) || 0;
       const dump_dt = parseFloat(state.global_output?.dump_dt);
       const ndumpSet = dump_every > 0;
@@ -4726,6 +4742,10 @@
       if (!enabled) {
         warnings.push('enabled is off: this block is written but renders nothing. Disable the section to omit it entirely.');
       }
+    }
+
+    if (skey === 'particles' && state.particles?._present && !state.particles._present.includes('n_species')) {
+      warnings.push('n_species is required but omitted from this input. Enter the species count to include it.');
     }
 
     // GPU-only: the GPU build aborts at init if gpu_memory_fraction is outside (0, 1].
@@ -4811,6 +4831,11 @@
           ? `Fixed ${planeAxis} coordinate (0 … ${planeMax}), rounded down to a cell boundary`
           : `Fixed ${planeAxis} coordinate, rounded down to a cell boundary`;
       }
+    }
+
+    const normalAxis = {yz: 0, xz: 1, xy: 2}[plane];
+    if (!Number.isFinite(Number(data.u_drift?.[normalAxis])) || Number(data.u_drift?.[normalAxis]) === 0) {
+      warnings.push(`Set a nonzero u_drift component normal to the ${plane} plane to supply injected particles.`);
     }
 
     // Validate plane_position
@@ -4925,11 +4950,28 @@
     const replacement = {};
     for (const [key, sec] of Object.entries(SCHEMA)) {
       const make = data => {
-        const defaults = buildDefaults(sec, dim);
+        const defaults = buildDefaults(sec, dim, useEditorDefaults);
         if (!useEditorDefaults) Object.assign(defaults, { _present: [], _indices: {}, _included: false });
-        if (data) Object.assign(defaults, data);
+        if (data) {
+          for (const [field, value] of Object.entries(data)) {
+            const definition = sec.fields.find(entry => entry.key === field);
+            defaults[field] = definition?.dim !== 'VARIABLE' && !field.startsWith('_') && Array.isArray(value) && Array.isArray(defaults[field])
+              ? Array.from({length: Math.max(defaults[field].length, value.length)}, (_, index) => value[index] ?? defaults[field][index]) : value;
+          }
+        }
+        // A supplied cadence disables its omitted alternative, as in the solver readers.
+        const alternatives = {
+          time: ['n_steps', 't_end'],
+          global_output: ['dump_every', 'dump_dt'],
+          ascent: ['dump_every', 'dump_dt'],
+          restart: ['save_every', 'save_every_seconds'],
+        }[key];
+        if (alternatives?.some(field => data?._present?.includes(field))) {
+          for (const field of alternatives) if (!data._present.includes(field)) defaults[field] = -1;
+        }
         if (useEditorDefaults) { delete defaults._present; delete defaults._indices; delete defaults._included; }
         if (data && sec.enabled === false) defaults._enabled = true;
+        if (!useEditorDefaults && key === 'diag_species' && !data) defaults.phase_spaces = '';
         return defaults;
       };
       if (sec.multiPerSpecies) replacement[key] = (parsed[key] || []).map(blocks => (blocks || []).map(make));
@@ -4940,7 +4982,10 @@
     replacement.particles.n_species = count;
     for (const [key, sec] of Object.entries(SCHEMA)) if (sec.perSpecies) {
       for (let sp = 0; sp < count; sp++) {
-        if (!replacement[key][sp]) replacement[key][sp] = sec.multiPerSpecies ? [] : { ...buildDefaults(sec, dim), _present: [], _indices: {}, _included: false };
+        if (!replacement[key][sp]) {
+          replacement[key][sp] = sec.multiPerSpecies ? [] : { ...buildDefaults(sec, dim, useEditorDefaults), _present: [], _indices: {}, _included: false };
+          if (!useEditorDefaults && key === 'diag_species') replacement[key][sp].phase_spaces = '';
+        }
       }
     }
     state = replacement;

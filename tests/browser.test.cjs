@@ -29,6 +29,77 @@ const puppeteer = require(process.env.PUPPETEER_MODULE || 'puppeteer');
       await page.click('#build-select .cs-button');
       await page.click(`#build-select .cs-option:nth-child(${build === 'CPU' ? 1 : 2})`);
     }
+    async function edit(selector, value) {
+      await page.$eval(selector, (element, value) => {
+        element.value = String(value);
+        element.dispatchEvent(new Event('input', {bubbles: true}));
+      }, value);
+    }
+    async function distribution(value) {
+      await page.$eval('select[data-section="species"][data-key="distribution"]', (element, value) => {
+        element.value = value;
+        element.dispatchEvent(new Event('change', {bubbles:true}));
+      }, value);
+    }
+    // Power-law controls appear only for POWERLAW and retain edits across switches.
+    await page.click('#nav-list [data-section="species"]');
+    for (const key of ['pl_slope','pl_min_factor','pl_max_factor']) {
+      assert.equal(await page.$(`[data-section="species"][data-key="${key}"]`), null);
+    }
+    assert.doesNotMatch(await preview(), /\bpl_(?:slope|min_factor|max_factor)=/);
+    await distribution('POWERLAW');
+    for (const [key,value] of [['pl_slope',-3.5],['pl_min_factor',2],['pl_max_factor',20]]) {
+      await edit(`[data-section="species"][data-key="${key}"]`, value);
+    }
+    assert.match(await preview(), /pl_slope=-3.5/);
+    assert.match(await preview(), /pl_min_factor=2\./);
+    assert.match(await preview(), /pl_max_factor=20\./);
+    await distribution('THERMAL');
+    assert.equal(await page.$('[data-section="species"][data-key="pl_slope"]'), null);
+    assert.doesNotMatch(await preview(), /\bpl_(?:slope|min_factor|max_factor)=/);
+    await distribution('POWERLAW');
+    for (const [key,value] of [['pl_slope',-3.5],['pl_min_factor',2],['pl_max_factor',20]]) {
+      assert.equal(await page.$eval(`[data-section="species"][data-key="${key}"]`, el => Number(el.value)), value);
+    }
+    await distribution('THERMAL');
+    // First and added injectors inherit current species values until explicitly overridden.
+    await page.click('#nav-list [data-section="plasma_injector"]');
+    await page.click('.species-enable-toggle [data-key="_enabled"]');
+    const inheritedScale = '[data-section="plasma_injector"][data-key="u_th"][data-inherit]';
+    const scaleOverride = '[data-section="plasma_injector"][data-key="u_th"]:not([data-inherit])';
+    const ppcOverride = '[data-section="plasma_injector"][data-key="ppc"][data-index="0"]';
+    assert.equal(await page.$eval(inheritedScale, el => el.checked), true);
+    assert.equal(await page.$eval(scaleOverride, el => el.disabled), true);
+    assert.equal(await page.$eval(ppcOverride, el => el.disabled), true);
+    await page.click('#nav-list [data-section="species"]');
+    await edit('[data-section="species"][data-key="u_th"]', 2);
+    await edit('[data-section="species"][data-key="ppc"][data-index="0"]', 6);
+    await page.click('#nav-list [data-section="plasma_injector"]');
+    assert.equal(await page.$eval(scaleOverride, el => Number(el.value)), 2);
+    assert.equal(await page.$eval(ppcOverride, el => Number(el.value)), 6);
+    await page.click('.injector-tabs[data-section="plasma_injector"] .add');
+    assert.equal(await page.$eval(inheritedScale, el => el.checked), true);
+    assert.equal(await page.$eval(scaleOverride, el => el.disabled), true);
+    assert.equal(await page.$eval(scaleOverride, el => Number(el.value)), 2);
+    await page.click(inheritedScale);
+    await edit(scaleOverride, 0);
+    let injectors = await page.evaluate(text => parseInputFile(text).plasma_injector[0], await preview());
+    assert.ok(!injectors[0]._present.includes('u_th'));
+    assert.ok(!injectors[0]._present.includes('ppc'));
+    assert.equal(injectors[1].u_th, 0);
+    await page.click('#nav-list [data-section="species"]');
+    await edit('[data-section="species"][data-key="u_th"]', 3);
+    await page.click('#nav-list [data-section="plasma_injector"]');
+    assert.equal(await page.$eval(scaleOverride, el => Number(el.value)), 0);
+    await page.click(inheritedScale);
+    assert.equal(await page.$eval(scaleOverride, el => Number(el.value)), 3);
+    assert.equal(await page.$eval(scaleOverride, el => el.disabled), true);
+    // Adding a dimension uses required editor prefills for each new array entry.
+    await changeDimension(3);
+    assert.match(await preview(), /ranks\(1:3\)=1,1,1/);
+    assert.match(await preview(), /n_cells\(1:3\)=128,128,128/);
+    assert.match(await preview(), /box_size\(1:3\)=64.,64.,64./);
+    await changeDimension(2);
     const optimizerTarget = () => page.$eval('#node-optimizer-target-label', element => Number(element.textContent.replace(/\D/g, '')));
     async function setOptimizerTarget(exponent) {
       await page.$eval('#node-optimizer-slider', (element, exponent) => {
@@ -42,9 +113,13 @@ const puppeteer = require(process.env.PUPPETEER_MODULE || 'puppeteer');
     await setOptimizerTarget(5);
     await changeBuild('GPU');
     assert.equal(await optimizerTarget(), 1e8);
+    assert.match(await preview(), /gpu_memory_fraction=0.75/);
+    assert.doesNotMatch(await preview(), /buffer_headroom=/);
     await setOptimizerTarget(7);
     await changeBuild('CPU');
     assert.equal(await optimizerTarget(), 1e5);
+    assert.match(await preview(), /buffer_headroom=0.2/);
+    assert.doesNotMatch(await preview(), /gpu_memory_fraction=/);
     await changeBuild('GPU');
     assert.equal(await optimizerTarget(), 1e7);
     await changeBuild('CPU');
@@ -58,6 +133,15 @@ const puppeteer = require(process.env.PUPPETEER_MODULE || 'puppeteer');
     await page.click(`${recommended} .node-opt-apply`);
     const axes = await page.$$eval('input[data-section="node_conf"][data-key="ranks"]', elements => elements.filter(element => Number(element.dataset.index) < 2).map(element => Number(element.value)));
     assert.equal(axes.reduce((a, b) => a * b, 1), 7);
+    // Older thermal inputs may carry ignored power-law settings; retain their values.
+    await load('old-thermal-powerlaw.input', 'species{distribution="thermal",u_th=1,pl_slope=-3,pl_min_factor=2,pl_max_factor=50}');
+    await page.click('#nav-list [data-section="species"]');
+    assert.equal(await page.$('[data-section="species"][data-key="pl_slope"]'), null);
+    assert.doesNotMatch(await preview(), /\bpl_(?:slope|min_factor|max_factor)=/);
+    await distribution('POWERLAW');
+    assert.equal(await page.$eval('[data-section="species"][data-key="pl_slope"]', el => Number(el.value)), -3);
+    assert.equal(await page.$eval('[data-section="species"][data-key="pl_max_factor"]', el => Number(el.value)), 50);
+    assert.match(await preview(), /pl_slope=-3\./);
     await load('old.input', 'node_conf{node_number=1,1}particles{num_species=2}species{name="one",dist="iso",vth=0,ct=2,0,n_constants=2}plasma_injector{plane="yz"}species{name="two"}raw_diag{selectrule="vx>0"}');
     let output = await preview();
     assert.match(output, /u_shell=0/);
@@ -77,15 +161,58 @@ const puppeteer = require(process.env.PUPPETEER_MODULE || 'puppeteer');
     await load('small.input', 'species{name="small"}');
     output = await preview();
     assert.doesNotMatch(output, /plasma_injector|raw_diag|u_th|ppc/);
+    await page.click('#nav-list [data-section="particles"]');
+    assert.match(await page.$eval('.validation-msg[data-section="particles"]', el => el.textContent), /n_species is required but omitted/);
+    await edit('[data-section="particles"][data-key="n_species"]', 1);
+    assert.doesNotMatch(await page.$eval('.validation-msg[data-section="particles"]', el => el.textContent), /n_species is required but omitted/);
+    await page.click('#nav-list [data-section="species"]');
     // Editing one omitted array entry writes only that entry.
     const ppc = await page.$('input[data-section="species"][data-key="ppc"][data-index="1"]');
     await ppc.evaluate(element => { element.value = '3'; element.dispatchEvent(new Event('input', {bubbles: true})); });
     assert.match(await preview(), /ppc\(2\)=3/);
     assert.doesNotMatch(await preview(), /ppc\(1/);
+    // An omitted diagnostic section shows no outputs until deliberately added.
+    await page.click('#nav-list [data-section="diag_species"]');
+    assert.equal(await page.$$eval('[data-section="diag_species"][data-phase]:checked', els => els.length), 0);
+    await edit('[data-section="diag_species"][data-key="x_bins"][data-index="0"]', 8);
+    assert.ok(await page.$$eval('[data-section="diag_species"][data-phase]:checked', els => els.length) > 0);
+    assert.doesNotMatch(await preview(), /phase_spaces=/);
     // Enabling an omitted injector creates an editable injector.
     await page.click('#nav-list [data-section="plasma_injector"]');
     await page.click('.species-enable-toggle [data-key="_enabled"]');
     assert.match(await preview(), /plasma_injector/);
+    // Enabling an omitted optional forcing section writes its required advanced fields.
+    await page.click('#nav-list [data-section="ext_force"]');
+    await page.click('[data-section="ext_force"][data-key="_enabled"]');
+    assert.match(await preview(), /k_min=/);
+    assert.match(await preview(), /k_max=/);
+    assert.doesNotMatch(await preview(), /\bdt=/);
+    // Partial imported injector ppc uses parent values for unsupplied components.
+    await load('inherit.input', 'node_conf{ranks=1,1}grid_space{n_cells=8,8,box_size=4,4}species{ppc=3,5,u_th=2}plasma_injector{plane="xz",plane_position=1,transverse_bounds=0,4,u_drift=0,1,0,ppc(2)=6}');
+    await page.click('#nav-list [data-section="plasma_injector"]');
+    assert.equal(await page.$eval(ppcOverride, el => Number(el.value)), 3);
+    assert.equal(await page.$eval('[data-section="plasma_injector"][data-key="ppc"][data-index="1"]', el => Number(el.value)), 6);
+    assert.match(await preview(), /ppc\(2\)=6/);
+    await page.click('.species-enable-toggle [data-key="_enabled"]');
+    await page.click('.species-enable-toggle [data-key="_enabled"]');
+    assert.match(await preview(), /plane="xz"/);
+    assert.match(await preview(), /plane_position=1\./);
+    // A dimension change fills omitted injector ppc entries from its species.
+    await changeDimension(3);
+    injectors = await page.evaluate(text => parseInputFile(text).plasma_injector[0], await preview());
+    assert.deepEqual(injectors[0].ppc, [3,6,4]);
+    await changeDimension(2);
+    await load('second-inherit.input', 'node_conf{ranks=1,1}particles{n_species=2}species{ppc=1,2}species{ppc=7,8}plasma_injector{ppc(2)=6}');
+    await changeDimension(3);
+    injectors = await page.evaluate(text => parseInputFile(text).plasma_injector[1], await preview());
+    assert.deepEqual(injectors[0].ppc, [7,6,4]);
+    // Time-based imports display disabled omitted step cadences and no false conflicts.
+    await load('time-cadence.input', 'time{dt=.1,t_end=2}global_output{dump_dt=.5}ascent{dump_dt=.25}restart{save_every=20}species{}');
+    await page.click('#nav-list [data-section="time"]');
+    assert.doesNotMatch(await page.$eval('.validation-msg[data-section="time"]', el => el.textContent), /Both n_steps and t_end are set/);
+    assert.equal(await page.$eval('[data-section="global_output"][data-key="dump_every"]', el => Number(el.value)), -1);
+    assert.equal(await page.$eval('[data-section="restart"][data-key="save_every_seconds"]', el => Number(el.value)), -1);
+    assert.doesNotMatch(await preview(), /^\s*(?:n_steps|dump_every|save_every_seconds)=/m);
     await load('three.input', 'node_conf{ranks=1,1,1}grid_space{n_cells=8,8,8}species{ppc=2,2,2,initial_bounds=0,1,2,3,4,5}');
     async function changeDimension(dimension) {
       await page.click('#dim-select .cs-button');
@@ -142,6 +269,59 @@ const puppeteer = require(process.env.PUPPETEER_MODULE || 'puppeteer');
     assert.match(output, /dump_Te=.true./);
     await page.click(teToggle);
     assert.match(await preview(), /dump_Te=.false./);
+    // Inactive loop and forcing imports retain values while their controls and assignments are hidden.
+    await load('inactive-fields.input', 'node_conf{ranks=1,1}ext_emf{add_loop=.false.,loop_radius=2,loop_center=3,4,loop_current=5}ext_force{drive_type="",k_min=.25,k_max=.75,mode_amp=2,omega=3,t_decay=4,t_drive_end=5,B_noise_rms=0}species{}');
+    const loopKeys = ['loop_radius','loop_center','loop_current'];
+    const forcingValues = {k_min:.25,k_max:.75,mode_amp:2,omega:3,t_decay:4,t_drive_end:5,B_noise_rms:0};
+    const sectionPreview = async section => page.evaluate((text,section) => parseInputFile(text)[section], await preview(), section);
+    await page.click('#nav-list [data-section="ext_emf"]');
+    for (const key of loopKeys) assert.equal(await page.$(`[data-section="ext_emf"][data-key="${key}"]`), null);
+    assert.doesNotMatch(await preview(), /\bloop_(?:radius|center|current)(?:\(|=)/);
+    const loopToggle = '[data-section="ext_emf"][data-key="add_loop"]';
+    await page.click(loopToggle);
+    for (const key of loopKeys) await page.waitForSelector(`[data-section="ext_emf"][data-key="${key}"]`, {visible:true});
+    assert.equal(await page.$eval('[data-section="ext_emf"][data-key="loop_radius"]', el => Number(el.value)), 2);
+    assert.deepEqual((await sectionPreview('ext_emf')).loop_center, [3,4]);
+    assert.equal((await sectionPreview('ext_emf')).loop_current, 5);
+    await edit('[data-section="ext_emf"][data-key="loop_radius"]', 6);
+    await edit('[data-section="ext_emf"][data-key="loop_center"][data-index="0"]', 7);
+    await edit('[data-section="ext_emf"][data-key="loop_center"][data-index="1"]', 8);
+    await edit('[data-section="ext_emf"][data-key="loop_current"]', 9);
+    await page.click(loopToggle);
+    for (const key of loopKeys) assert.equal(await page.$(`[data-section="ext_emf"][data-key="${key}"]`), null);
+    assert.doesNotMatch(await preview(), /\bloop_(?:radius|center|current)(?:\(|=)/);
+    await page.click(loopToggle);
+    assert.equal(await page.$eval('[data-section="ext_emf"][data-key="loop_radius"]', el => Number(el.value)), 6);
+    assert.deepEqual((await sectionPreview('ext_emf')).loop_center, [7,8]);
+    assert.equal((await sectionPreview('ext_emf')).loop_current, 9);
+    await page.click('#nav-list [data-section="ext_force"]');
+    const driveDropdown = 'select[data-section="ext_force"][data-key="drive_type"] + .custom-select';
+    async function driveType(value) {
+      await page.click(`${driveDropdown} .cs-button`);
+      await page.click(`${driveDropdown} .cs-option:nth-child(${value === 'TURB' ? 2 : 1})`);
+    }
+    for (const key of Object.keys(forcingValues)) {
+      assert.equal(await page.$(`[data-section="ext_force"][data-key="${key}"]`), null);
+      assert.ok(!(await sectionPreview('ext_force'))._present.includes(key));
+    }
+    await driveType('TURB');
+    for (const [key,value] of Object.entries(forcingValues)) {
+      const selector = `[data-section="ext_force"][data-key="${key}"]`;
+      await page.waitForSelector(selector, {visible:true});
+      assert.equal(await page.$eval(selector, el => Number(el.value)), value);
+      await edit(selector, value + 1);
+    }
+    await driveType('');
+    for (const key of Object.keys(forcingValues)) {
+      assert.equal(await page.$(`[data-section="ext_force"][data-key="${key}"]`), null);
+      assert.ok(!(await sectionPreview('ext_force'))._present.includes(key));
+    }
+    await driveType('TURB');
+    const restoredForcing = await sectionPreview('ext_force');
+    for (const [key,value] of Object.entries(forcingValues)) {
+      assert.equal(await page.$eval(`[data-section="ext_force"][data-key="${key}"]`, el => Number(el.value)), value + 1);
+      assert.equal(restoredForcing[key], value + 1);
+    }
     // The downloaded input contains the displayed assignments and comments.
     const session = await browser.target().createCDPSession();
     await session.send('Browser.setDownloadBehavior', {behavior: 'allow', downloadPath: directory, eventsEnabled: true});

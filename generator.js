@@ -1,16 +1,29 @@
 // Generate dHybridR Fortran namelist input file from form state
 
-// A field with `requires` exists only while another section's key has the given
-// value (kappa, dump_Pe and dump_Te require the evolved electron closure); the code
-// rejects it otherwise, so it is neither shown nor emitted.
+// Conditions select the fields shown and emitted; inactiveAllowed preserves ignored imports.
 function fieldRequirementMet(field, state, speciesIndex) {
   if (field.distribution) {
     const distribution = String(state?.species?.[speciesIndex ?? 0]?.distribution || 'thermal').toLowerCase();
     if (distribution !== field.distribution) return false;
   }
   if (!field.requires) return true;
-  const value = state?.[field.requires.section]?.[field.requires.key] ?? 'polytropic';
-  return String(value).toLowerCase() === field.requires.value;
+  const value = state?.[field.requires.section]?.[field.requires.key] ?? SCHEMA[field.requires.section].fields.find(f => f.key === field.requires.key)?.default;
+  return String(value).toLowerCase() === String(field.requires.value).toLowerCase();
+}
+
+// Resolve omitted injector values without storing a copy of the species values.
+function resolveInputValue(field, data, state, speciesIndex = 0) {
+  let fallback = field.default;
+  if (field.inherit) {
+    const [section, key] = field.inherit.split('.');
+    const parentField = SCHEMA[section].fields.find(field => field.key === key);
+    fallback = resolveInputValue(parentField, state[section]?.[speciesIndex] || {}, state, speciesIndex);
+  }
+  const value = data?.[field.key];
+  if (Array.isArray(value) && Array.isArray(fallback)) {
+    return fallback.map((entry, index) => value[index] ?? entry);
+  }
+  return value ?? fallback;
 }
 
 function generateInputFile(state, dim, build) {
@@ -100,7 +113,6 @@ function formatSection(sec, skey, data, dim, build, state, speciesNum, injectorN
     if (field.locked) {
       val = field.default;
     }
-    if (!data._present && field.advanced && isDefaultValue(field, val, dim)) continue;
     if (val === undefined || val === null) continue;
     const size = getArraySize(field.dim, dim);
     const indices = data._indices?.[field.key];
@@ -256,19 +268,4 @@ function getArraySize(dimSpec, dim) {
 // (min0,max0,min1,max1,...) -> (min0,min1,...,max0,max1,...)
 function pairsToMinMax(arr) {
   return arr.filter((_, i) => i % 2 === 0).concat(arr.filter((_, i) => i % 2 === 1));
-}
-
-function isDefaultValue(field, val, dim) {
-  if (val === undefined || val === null) return true;
-  if (field.dim === 'VARIABLE') return Array.isArray(val) && val.length === 0;
-  const arrSize = getArraySize(field.dim, dim);
-  if (arrSize > 0) {
-    if (!Array.isArray(val)) return false;
-    const def = field.default || [];
-    for (let i = 0; i < arrSize; i++) {
-      if (String(val[i]) !== String(def[i])) return false;
-    }
-    return true;
-  }
-  return String(val) === String(field.default);
 }

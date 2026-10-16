@@ -1,4 +1,5 @@
-// Generated from dHybridR tools/input_names.json; do not edit.
+// Historical input names used when importing old files and presets.
+// Update these mappings by hand when solver input names change.
 const INPUT_NAMES = {
   "keys": [
     {
