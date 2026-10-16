@@ -17,7 +17,7 @@ It is a static page (HTML, CSS, and JavaScript), so there is no server or build 
 - Live preview of the generated input file as you edit.
 - Load an existing input file to populate every field.
 - Built-in presets (periodic box, shock, Alfven wave) to start from.
-- Up to 10 species, each with its own boundaries, diagnostics, injectors, and tracking.
+- Multiple species, each with its own boundaries, diagnostics, injectors, and tracking.
 - Copy to clipboard or download a ready-to-run input file.
 
 ## License

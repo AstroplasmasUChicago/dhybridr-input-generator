@@ -130,7 +130,9 @@
     if (sec.enabled === false) data._enabled = false;
     for (const f of sec.fields) {
       const arrSize = getArraySize(f.dim, currentDim);
-      if (arrSize > 0) {
+      if (f.dim === 'VARIABLE') {
+        data[f.key] = [...f.default];
+      } else if (arrSize > 0) {
         data[f.key] = (f.default || []).slice(0, arrSize);
         // Pad if needed
         while (data[f.key].length < arrSize) data[f.key].push(f.default?.[data[f.key].length] ?? (f.type === 'strarr' ? 'per' : 0));
@@ -610,7 +612,7 @@
     const fparserBtn = field.fparser
       ? ` <span class="fparser-help" tabindex="0" title="Function parser syntax&#10;&#10;Variables: x, y, z` +
         (field.key === 'selectrule' ? `, vx, vy, vz (v)` : '') +
-        `&#10;Constants: ct(1)..ct(16), pi&#10;&#10;Functions:&#10;  abs, sin, cos, tan, htan (tanh)&#10;  hsec (sech), exp, log, tenlog (log10)&#10;  sqrt, asin, acos, atan, atan2&#10;  pow(a,b), not(a), neg(a)&#10;&#10;Operators: + - * / ^ **&#10;Logic: && || == != >= <= > <&#10;Conditional: if(cond, true, false)">?</span>`
+        `&#10;Constants: ct(1), ct(2), ... from the supplied list; pi&#10;&#10;Functions:&#10;  abs, sin, cos, tan, htan (tanh)&#10;  hsec (sech), exp, log, tenlog (log10)&#10;  sqrt, asin, acos, atan, atan2&#10;  pow(a,b), not(a), neg(a)&#10;&#10;Operators: + - * / ^ **&#10;Logic: && || == != >= <= > <&#10;Conditional: if(cond, true, false)">?</span>`
       : '';
 
     return `<div class="field-row ${dimClass}${field.locked ? ' field-row-locked' : ''}">
@@ -1086,7 +1088,9 @@
           return;
         }
 
-        if (arrIdx !== undefined) {
+        if (field.dim === 'VARIABLE') {
+          target[elKey] = el.value.trim() ? el.value.split(',').map(v => v.trim()) : [];
+        } else if (arrIdx !== undefined) {
           if (!Array.isArray(target[elKey])) target[elKey] = [];
           if (field.type === 'bool') {
             target[elKey][arrIdx] = el.checked;
@@ -1111,7 +1115,7 @@
 
         // Special: num_species changed
         if (elKey === 'num_species') {
-          const count = Math.max(1, Math.min(10, parseInt(el.value) || 1));
+          const count = Math.max(1, parseInt(el.value) || 1);
           state.particles.num_species = count;
           ensureSpeciesArrays(count);
           // Rebuild species tabs for all per-species sections
@@ -1340,7 +1344,10 @@
 
       const arrSize = getArraySize(field.dim, currentDim);
 
-      if (arrSize > 0 && Array.isArray(val)) {
+      if (field.dim === 'VARIABLE') {
+        const el = document.querySelector(selector);
+        if (el) el.value = val.join(', ');
+      } else if (arrSize > 0 && Array.isArray(val)) {
         // Array inputs
         for (let i = 0; i < val.length; i++) {
           const el = document.querySelector(`${selector}[data-index="${i}"]`);
@@ -1880,10 +1887,13 @@
     s = s.replace(/(\d)([dD])([+-]?\d)/g, '$1e$3');
     // Replace ct(N) with actual values from state (1-indexed -> 0-indexed)
     const ctVals = ctValsOverride || state.ext_emf?.ct || [];
-    s = s.replace(/ct\((\d+)\)/gi, (_, n) => {
+    let values;
+    try { values = parseConstantValues(ctVals.join(',')); }
+    catch { return 'ct'; }
+    s = s.replace(/\bct\s*\(\s*(\d+)\s*\)/gi, (_, n) => {
       const idx = parseInt(n) - 1;
-      const v = parseFloat(ctVals[idx]) || 0;
-      return '(' + v + ')';
+      // Leave missing constants unresolved so the plot reports an evaluation error.
+      return values[idx] === undefined ? `ct(${n})` : '(' + values[idx] + ')';
     });
     // Replace if(cond, true, false) → JS ternary ((cond) > 0 ? (true) : (false))
     // Handle nested if() by replacing innermost first, repeatedly
@@ -4824,8 +4834,15 @@
 
   // ---- Preview ----
   function updatePreview() {
-    const text = generateInputFile(state, currentDim, currentBuild);
-    document.getElementById('preview-text').textContent = text;
+    try {
+      document.getElementById('preview-text').textContent = generateInputFile(state, currentDim, currentBuild);
+      document.getElementById('btn-generate').disabled = false;
+      document.getElementById('btn-copy').disabled = false;
+    } catch (err) {
+      document.getElementById('preview-text').textContent = 'Cannot generate input: ' + err.message;
+      document.getElementById('btn-generate').disabled = true;
+      document.getElementById('btn-copy').disabled = true;
+    }
   }
 
   // ---- Actions ----
@@ -5116,6 +5133,13 @@
   }
 
   function applyPreset(preset) {
+    for (const [key, sec] of Object.entries(SCHEMA)) {
+      const blocks = sec.perSpecies ? (preset.values[key] || []).flat() : [preset.values[key]];
+      if (blocks.some(data => data && Object.keys(data).some(name => name.toLowerCase() === 'n_constants'))) {
+        toast(`Cannot load preset: ${key}.n_constants was removed. Remove it and retain only the active ct values before loading.`);
+        return;
+      }
+    }
     // All saved injectors are enabled below; reject nonzero vboost before loading.
     for (const injectors of preset.values.plasma_injector || []) {
       if (Array.isArray(injectors) && injectors.some(d => d.vboost?.some(v => Number(v) !== 0))) {

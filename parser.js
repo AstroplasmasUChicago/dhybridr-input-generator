@@ -46,7 +46,7 @@ function parseInputFile(text) {
   // (the caller keeps the current selection).
   // Match an actual `key =` assignment, ignoring `!` comments (a hint comment may
   // name the other build's knob, e.g. gpu_mem_frac's comment mentions spare_size).
-  const stripComments = (body) => body.split('\n').map(l => l.replace(/!.*$/, '')).join('\n');
+  const stripComments = stripNamelistComments;
   const assigns = (body, key) => new RegExp('(^|[^a-z_])' + key + '\\s*=', 'i').test(stripComments(body));
   // First numeric value assigned to `key` in a section body (null if absent/non-numeric).
   const assignedNumber = (body, key) => {
@@ -122,29 +122,34 @@ function parseInputFile(text) {
 
 function parseNamelistBody(body, schema, dim) {
   const data = {};
+  const constants = new Map();
   // Build field lookup
   const fieldMap = {};
   for (const f of schema.fields) {
     fieldMap[f.key.toLowerCase()] = f;
   }
 
-  // Remove comment lines and join continuation
-  const lines = body.split('\n')
-    .map(l => l.replace(/!.*$/, '').trim())
+  // Keep record boundaries; they can separate constant values without a comma.
+  const lines = stripNamelistComments(body).split('\n')
+    .map(l => l.trim())
     .filter(l => l.length > 0);
-  const joined = lines.join(' ');
+  const joined = lines.join('\n');
 
   // Split on assignments: key=value or key(...)=value
   // Match patterns like: name="value", key(1:3)=1,2,3
-  const assignRegex = /(\w+)\s*(?:\([^)]*\))?\s*=\s*/g;
+  const assignRegex = /(\w+)\s*(?:\(([^)]*)\))?\s*=/g;
+  const unquoted = joined.replace(/"[^"]*"|'[^']*'/g, s => ' '.repeat(s.length));
   const assignments = [];
   let am;
-  while ((am = assignRegex.exec(joined)) !== null) {
-    assignments.push({ key: am[1].toLowerCase(), start: am.index + am[0].length, matchStart: am.index });
+  while ((am = assignRegex.exec(unquoted)) !== null) {
+    assignments.push({ key: am[1].toLowerCase(), indices: am[2], start: am.index + am[0].length, matchStart: am.index });
   }
 
   for (let i = 0; i < assignments.length; i++) {
     const a = assignments[i];
+    if (a.key === 'n_constants') {
+      throw new Error(`${schema.namelist.replace('nl_', '')}.n_constants was removed; supply only the active ct values, whose count is inferred.`);
+    }
     if (schema.namelist === 'nl_plasma_injector' && a.key === 'vboost') {
       throw new Error('plasma_injector.vboost was removed with faux-shock injection; remove it and use vdrift for ordinary injection.');
     }
@@ -155,6 +160,25 @@ function parseNamelistBody(body, schema, dim) {
     const field = fieldMap[a.key];
     if (!field) continue;
 
+    if (field.dim === 'VARIABLE') {
+      const list = rawVal.replace(/\n/g, (_, index) => rawVal[index - 1] === ',' || rawVal[index + 1] === ',' ? '' : ',');
+      const values = parseConstantValues(list);
+      if (values.length === 0) throw new Error('ct requires at least one value; omit ct for no constants.');
+      const indices = a.indices === undefined ? null : a.indices.replace(/\s/g, '').match(/^([1-9]\d*)(?::([1-9]\d*))?$/);
+      if (a.indices !== undefined && !indices) throw new Error('ct indices must be positive integers or a range lo:hi.');
+      const start = indices ? Number(indices[1]) : 1;
+      const last = start + values.length - 1;
+      if (!Number.isSafeInteger(last)) throw new Error('ct index is too large.');
+      if (indices?.[2] && Number(indices[2]) !== last) throw new Error('ct range must match the number of supplied values.');
+      values.forEach((value, j) => {
+        const index = start + j;
+        if (constants.has(index)) throw new Error(`ct(${index}) is assigned more than once.`);
+        constants.set(index, value);
+      });
+      continue;
+    }
+
+    rawVal = rawVal.replace(/\n/g, ' ');
     const arrSize = getArraySize(field.dim, dim);
 
     if (arrSize > 0) {
@@ -213,7 +237,18 @@ function parseNamelistBody(body, schema, dim) {
     }
   }
 
+  if (constants.size) {
+    data.ct = [];
+    for (let index = 1; index <= constants.size; index++) {
+      if (!constants.has(index)) throw new Error(`ct(${index}) is missing; supply every constant from ct(1) through the last index.`);
+      data.ct.push(constants.get(index));
+    }
+  }
   return data;
+}
+
+function stripNamelistComments(body) {
+  return body.replace(/"[^"]*"|'[^']*'|![^\n]*/g, text => text.startsWith('!') ? '' : text);
 }
 
 // (min0,min1,...,max0,max1,...) -> (min0,max0,min1,max1,...); an odd count is left as is

@@ -1,5 +1,5 @@
 // dHybridR input file schema — every parameter from every Read* subroutine
-// dim: 0=scalar, 'DIM'=DIM-dependent, 'DIM2'=DIM*2, 'BDIM'=2*(DIM-1), 'VDIM'=always 3, N=fixed
+// dim: 0=scalar, 'DIM'=DIM-dependent, 'DIM2'=DIM*2, 'BDIM'=2*(DIM-1), 'VDIM'=always 3, 'VARIABLE'=supplied length, N=fixed
 // layout: 'minmax' = the code reads this DIM2 array as all mins then all maxs (xmin,ymin,zmin,xmax,ymax,zmax);
 //   the form keeps per-axis (min,max) pairs and generator.js/parser.js permute at the file boundary
 // type: 'int','real','bool','str','strarr'
@@ -180,10 +180,10 @@ const SCHEMA = {
     groups: [
       { title: 'Magnetic Field', keys: ['Bx','By','Bz'] },
       { title: 'Initial B Perturbation (t=0)',
-        desc: 'A one-time perturbation added to the self-consistent B at t=0 (applied at the end of StartUpAlgorithm; not on restart). It perturbs the evolving field rather than imposing a constant external field. Shares ct(1:n_constants) with the fields above. Default "0." means none.',
+        desc: 'A one-time perturbation added to the self-consistent B at t=0 (applied at the end of StartUpAlgorithm; not on restart). It perturbs the evolving field rather than imposing a constant external field. Shares the supplied ct constants with the fields above. Default "0." means none.',
         keys: ['Bx_init','By_init','Bz_init'] },
       { title: 'Electric Field', keys: ['Ex','Ey','Ez'] },
-      { title: 'Constants & Extras', keys: ['n_constants','ct','Jext','NoiseLevel','adddipole','a_dipole','pos_dipole','curr_dipole'] },
+      { title: 'Constants & Extras', keys: ['ct','Jext','NoiseLevel','adddipole','a_dipole','pos_dipole','curr_dipole'] },
     ],
     fields: [
       { key: 'Bx', label: 'Bx', type: 'str', dim: 0, default: '0.', hint: 'B_x expression', fparser: true },
@@ -195,8 +195,7 @@ const SCHEMA = {
       { key: 'Ex', label: 'Ex', type: 'str', dim: 0, default: '0.', hint: 'E_x expression', fparser: true },
       { key: 'Ey', label: 'Ey', type: 'str', dim: 0, default: '0.', hint: 'E_y expression', fparser: true },
       { key: 'Ez', label: 'Ez', type: 'str', dim: 0, default: '0.', hint: 'E_z expression', fparser: true },
-      { key: 'n_constants', label: 'n_constants', type: 'int', dim: 0, default: 0, hint: 'Number of constants available as ct(1)..ct(N) in field expressions' },
-      { key: 'ct', label: 'ct', type: 'real', dim: 16, default: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], hint: 'User constants ct(1) through ct(16), referenced in B/E field expressions', advanced: true },
+      { key: 'ct', label: 'ct', type: 'real', dim: 'VARIABLE', default: [], textarea: true, hint: 'Comma-separated constants ct(1), ct(2), ... for B/E expressions; blank = none', advanced: true },
       { key: 'Jext', label: 'Jext', type: 'real', dim: 'VDIM', default: [0,0,0], hint: 'External current J(x,y,z)',
         dimLabels: ['Jx','Jy','Jz'] },
       { key: 'NoiseLevel', label: 'NoiseLevel', type: 'real', dim: 'VDIM', default: [0,0,0], hint: 'Noise added to B components',
@@ -284,7 +283,7 @@ const SCHEMA = {
     desc: 'Global particle settings.',
     required: true,
     fields: [
-      { key: 'num_species', label: 'num_species', type: 'int', dim: 0, default: 1, hint: 'Number of ion species (\u22651)', min: 1, max: 10 },
+      { key: 'num_species', label: 'num_species', type: 'int', dim: 0, default: 1, hint: 'Number of ion species (\u22651)', min: 1 },
       { key: 'gpu_mem_frac', label: 'gpu_mem_frac', type: 'real', dim: 0, default: 0.75, build: 'GPU',
         hint: 'GPU only: global VRAM fill target, the fraction of free GPU memory the auto-tuned particle buffers grow to (0 < x \u2264 1, default 0.75). Replaces the per-species over-allocation headroom on GPU builds.' },
       { key: 'gpu_min_spare_frac', label: 'gpu_min_spare_frac', type: 'real', dim: 0, default: 0, build: 'GPU', advanced: true,
@@ -301,7 +300,7 @@ const SCHEMA = {
     groups: [
       { title: 'Basic', keys: ['name','dist','num_par','spare_size','ir','mass_to_charge_ratio'] },
       { title: 'Velocity (γ*v)', keys: ['vdrift','vth','vth_par','vsp','pl_slope','pl_min','pl_max'] },
-      { title: 'Density', keys: ['nsp','nsp_domain','domain_boundary','n_constants','ct'] },
+      { title: 'Density', keys: ['nsp','nsp_domain','domain_boundary','ct'] },
       { title: 'Tracking', keys: ['follow','chk_dup','chk_mpi_balance','chk_test_boundaries'] },
     ],
     fields: [
@@ -328,8 +327,7 @@ const SCHEMA = {
       { key: 'domain_boundary', label: 'domain_boundary', type: 'real', dim: 'DIM2', layout: 'minmax',
         default: [-1,-1,-1,-1,-1,-1], hint: 'Hard rectangular clip on particle placement (-1 = use full box). Applied before nsp_domain. File order: all mins then all maxs (xmin,ymin,zmin,xmax,ymax,zmax).',
         dimLabels: ['x\u2098\u1d62\u2099','x\u2098\u2090\u2093','y\u2098\u1d62\u2099','y\u2098\u2090\u2093','z\u2098\u1d62\u2099','z\u2098\u2090\u2093'] },
-      { key: 'n_constants', label: 'n_constants', type: 'int', dim: 0, default: 0, hint: 'Number of constants available as ct(1)..ct(N) in nsp, nsp_domain, and vsp expressions' },
-      { key: 'ct', label: 'ct', type: 'real', dim: 16, default: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], hint: 'User constants ct(1) through ct(16), referenced in nsp/nsp_domain/vsp expressions', advanced: true },
+      { key: 'ct', label: 'ct', type: 'real', dim: 'VARIABLE', default: [], textarea: true, hint: 'Comma-separated constants ct(1), ct(2), ... for nsp/nsp_domain/vsp; blank = none', advanced: true },
       { key: 'follow', label: 'follow', type: 'bool', dim: 0, default: false, hint: 'Follow/tag particles' },
       { key: 'chk_dup', label: 'chk_dup', type: 'bool', dim: 0, default: false, hint: 'Check for duplicate particles' },
       { key: 'chk_mpi_balance', label: 'chk_mpi_balance', type: 'bool', dim: 0, default: false, hint: 'Warn each step if the MPI particle exchange sent and received counts disagree (debug)', advanced: true },
@@ -440,8 +438,7 @@ const SCHEMA = {
       { key: 'raw_dump_fraction', label: 'raw_dump_fraction', type: 'real', dim: 0, default: 1.0, hint: 'Fraction of particles to dump' },
       { key: 'v_min', label: 'v_min', type: 'real', dim: 0, default: 0, hint: 'Minimum velocity filter (v)' },
       { key: 'selectrule', label: 'selectrule', type: 'str', dim: 0, default: '1.', fparser: true, hint: 'Particle filter expression — dumps where result > 0. Uses x,y,z (position) and vx,vy,vz (v). Default "1." falls back to raw_volume/v_min/raw_dump_fraction filters. Any other value replaces those filters entirely.' },
-      { key: 'n_constants', label: 'n_constants', type: 'int', dim: 0, default: 0, hint: 'Number of constants' },
-      { key: 'ct', label: 'ct', type: 'real', dim: 16, default: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], hint: 'Constants ct(1:16)', advanced: true },
+      { key: 'ct', label: 'ct', type: 'real', dim: 'VARIABLE', default: [], textarea: true, hint: 'Comma-separated constants ct(1), ct(2), ... for selectrule; blank = none', advanced: true },
     ]
   },
 
@@ -554,7 +551,7 @@ const PRESETS = [
       global_output: { ndump: -1, tdump: 1.0, output_folder: 'Output' },
       ext_emf: { Bx: '1.', By: '0.', Bz: '0.' },
       algorithm: { filternpass: 4, ifsmoothextfields: true },
-      species: [{ num_par: [8,8], vth: 0.1, n_constants: 2, ct: [0.01,0.04908739,0,0,0,0,0,0,0,0,0,0,0,0,0,0], vsp: ['0.','ct(1)*sin(ct(2)*x)','0.'] }],
+      species: [{ num_par: [8,8], vth: 0.1, ct: [0.01,0.04908739], vsp: ['0.','ct(1)*sin(ct(2)*x)','0.'] }],
       boundary_conditions: [{ bdtype: ['per','per','per','per'] }],
       diag_species: [{ xres: [256,32] }],
       field_diag: { dmp_bfld: [false,true,false,true] },

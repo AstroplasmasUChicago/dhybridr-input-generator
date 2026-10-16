@@ -108,6 +108,16 @@ function formatSection(sec, skey, data, dim, build, state, speciesNum, injectorN
 }
 
 function formatValue(field, val, dim) {
+  if (field.dim === 'VARIABLE') {
+    const values = parseConstantValues(val.join(','));
+    if (values.length === 0) return null;
+    // Write at most eight constants per input line.
+    const rows = [];
+    for (let i = 0; i < values.length; i += 8) {
+      rows.push(values.slice(i, i + 8).map(v => formatNumber(v, field.type)).join(','));
+    }
+    return `${field.key}(1:${values.length})=${rows.join(',\n\t\t')}`;
+  }
   const arrSize = getArraySize(field.dim, dim);
 
   if (arrSize > 0) {
@@ -164,6 +174,23 @@ function formatValue(field, val, dim) {
   }
 }
 
+// Expand comma-separated real values, including Fortran repeats such as 3*0.
+function parseConstantValues(text) {
+  if (!text.trim()) return [];
+  const values = [];
+  for (const entry of text.split(',')) {
+    const repeated = entry.trim().match(/^(\d+)\s*\*\s*(.*)$/);
+    const count = repeated ? Number(repeated[1]) : 1;
+    const literal = repeated ? repeated[2] : entry.trim();
+    const value = Number(literal.replace(/d/gi, 'e'));
+    if (!Number.isSafeInteger(count) || count < 1 || !/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eEdD][+-]?\d+)?$/.test(literal) || !Number.isFinite(value)) {
+      throw new Error(`Invalid ct value: "${entry.trim()}". Use comma-separated real numbers.`);
+    }
+    for (let i = 0; i < count; i++) values.push(value);
+  }
+  return values;
+}
+
 function formatNumber(v, type) {
   if (type === 'int') return String(Math.round(Number(v)));
   let n = Number(v);
@@ -201,6 +228,7 @@ function pairsToMinMax(arr) {
 
 function isDefaultValue(field, val, dim) {
   if (val === undefined || val === null) return true;
+  if (field.dim === 'VARIABLE') return Array.isArray(val) && val.length === 0;
   const arrSize = getArraySize(field.dim, dim);
   if (arrSize > 0) {
     if (!Array.isArray(val)) return false;
