@@ -100,39 +100,101 @@ const puppeteer = require(process.env.PUPPETEER_MODULE || 'puppeteer');
     assert.match(await preview(), /n_cells\(1:3\)=128,128,128/);
     assert.match(await preview(), /box_size\(1:3\)=64.,64.,64./);
     await changeDimension(2);
-    const optimizerTarget = () => page.$eval('#node-optimizer-target-label', element => Number(element.textContent.replace(/\D/g, '')));
-    async function setOptimizerTarget(exponent) {
-      await page.$eval('#node-optimizer-slider', (element, exponent) => {
-        element.value = String(exponent);
-        element.dispatchEvent(new Event('input', {bubbles: true}));
-      }, exponent);
+    const optimizerTarget = () => page.$eval('#node-optimizer-target', element => Number(element.value));
+    const optimizerCurrent = () => page.$eval('#node-optimizer-current', element => element.textContent);
+    async function setOptimizerSlider(exponent) {
+      await edit('#node-optimizer-slider', exponent);
     }
-    // CPU and GPU have distinct defaults and retain separate slider choices.
+    // Typed targets and the slider stay synchronized; builds keep separate exact targets.
     await page.click('#nav-list [data-section="node_conf"]');
     assert.equal(await optimizerTarget(), 1e7);
-    await setOptimizerTarget(5);
+    assert.equal(await page.$eval('#node-optimizer-target', el => el.type), 'text');
+    assert.equal(await page.$eval('#node-optimizer-target', el => el.value), '1e+7');
+    await setOptimizerSlider(5);
+    assert.equal(await page.$eval('#node-optimizer-target', el => el.value), '1e+5');
+    assert.equal(await optimizerTarget(), 1e5);
+    await page.click('#node-optimizer-target');
+    await page.keyboard.down('Control');
+    await page.keyboard.press('KeyA');
+    await page.keyboard.up('Control');
+    await page.keyboard.press('Backspace');
+    await page.type('#node-optimizer-target', '1.2345e');
+    assert.equal(await page.$eval('#node-optimizer-target', el => el.value), '1.2345e');
+    assert.equal(await page.$eval('#node-optimizer-target', el => el.validity.valid), false);
+    await page.type('#node-optimizer-target', '4');
+    assert.equal(await optimizerTarget(), 12345);
+    await page.click('.node-optimizer-header');
+    assert.equal(await page.$eval('#node-optimizer-target', el => el.value), '1.2345e+4');
+    assert.ok(Math.abs(await page.$eval('#node-optimizer-slider', el => Number(el.value)) - Math.log10(12345)) < 1e-12);
+    await changeDimension(3);
+    await changeDimension(2);
+    assert.equal(await optimizerTarget(), 12345);
     await changeBuild('GPU');
     assert.equal(await optimizerTarget(), 1e8);
     assert.match(await preview(), /gpu_memory_fraction=0.75/);
     assert.doesNotMatch(await preview(), /buffer_headroom=/);
-    await setOptimizerTarget(7);
+    await edit('#node-optimizer-target', 7654321);
     await changeBuild('CPU');
-    assert.equal(await optimizerTarget(), 1e5);
+    assert.equal(await optimizerTarget(), 12345);
     assert.match(await preview(), /buffer_headroom=0.2/);
     assert.doesNotMatch(await preview(), /gpu_memory_fraction=/);
     await changeBuild('GPU');
-    assert.equal(await optimizerTarget(), 1e7);
+    assert.equal(await optimizerTarget(), 7654321);
     await changeBuild('CPU');
-    // The closest-to-target recommendation remains visible and can be applied.
+    // Exact targets outside the original slider range expand its bounds.
+    for (const target of [99, 1e10]) {
+      await edit('#node-optimizer-target', target);
+      assert.equal(await optimizerTarget(), target);
+      const slider = await page.$eval('#node-optimizer-slider', el => ({min: Number(el.min), max: Number(el.max), value: Number(el.value)}));
+      assert.ok(slider.min <= Math.log10(target) && slider.max >= Math.log10(target));
+      assert.ok(Math.abs(slider.value - Math.log10(target)) < 1e-12);
+    }
+    await edit('#node-optimizer-target', 12345);
+    // Invalid targets remove Apply actions without replacing the saved valid target.
+    for (const invalid of ['', 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      await edit('#node-optimizer-target', invalid);
+      assert.match(await page.$eval('#node-optimizer-results', el => el.textContent), /positive whole number/);
+      assert.equal(await page.$$eval('.node-opt-apply:not(:disabled)', els => els.length), 0);
+      assert.equal(await page.$eval('#node-optimizer-target', el => el.validity.valid), false);
+    }
+    await changeBuild('GPU');
+    await changeBuild('CPU');
+    assert.equal(await optimizerTarget(), 12345);
+    // Current ranks and recommendations report the distance from the target.
     await load('optimizer.input', 'node_conf{ranks=1,1}grid_space{n_cells=64,64}species{ppc=4,4}');
     await page.click('#nav-list [data-section="node_conf"]');
-    await setOptimizerTarget(4);
+    // Targets larger than the input display the minimum of one MPI rank.
+    await edit('#node-optimizer-target', '1e7');
+    assert.match(await page.$eval('#node-optimizer-results', el => el.textContent), /Estimated MPI ranks: 1 \(minimum\)/);
+    await edit('#node-optimizer-target', '65536');
+    assert.match(await page.$eval('#node-optimizer-results', el => el.textContent), /Estimated MPI ranks: 1\.0/);
+    await setOptimizerSlider(4);
+    assert.equal(await optimizerTarget(), 1e4);
+    assert.match(await optimizerCurrent(), /1 MPI rank,.*65,536 particles\/rank \(555\.36% above target\)/);
+    assert.match(await page.$eval('#node-optimizer-results thead', el => el.textContent), /vs target/);
     const recommended = '#node-optimizer-results .node-opt-recommended';
     assert.equal(await page.$$eval(recommended, elements => elements.length), 1);
     assert.equal(await page.$eval(`${recommended} td`, element => Number(element.textContent)), 7);
+    assert.equal(await page.$eval(`${recommended} td:nth-child(5)`, el => el.textContent), '-6.38%');
+    assert.equal(await page.$eval(`${recommended} td:nth-child(5)`, el => el.title), '6.38% below target');
     await page.click(`${recommended} .node-opt-apply`);
     const axes = await page.$$eval('input[data-section="node_conf"][data-key="ranks"]', elements => elements.filter(element => Number(element.dataset.index) < 2).map(element => Number(element.value)));
     assert.equal(axes.reduce((a, b) => a * b, 1), 7);
+    assert.match(await optimizerCurrent(), /7 MPI ranks.*9,362\.29 particles\/rank.*6\.38% below target/);
+    for (const index of [0, 1]) await edit(`[data-section="node_conf"][data-key="ranks"][data-index="${index}"]`, 2);
+    assert.match(await optimizerCurrent(), /4 MPI ranks.*16,384 particles\/rank.*63\.84% above target/);
+    await edit('#node-optimizer-target', 16384);
+    assert.match(await optimizerCurrent(), /matches target/);
+    // Grid and species edits refresh the current-input comparison.
+    await page.click('#nav-list [data-section="grid_space"]');
+    await edit('[data-section="grid_space"][data-key="n_cells"][data-index="0"]', 32);
+    await page.click('#nav-list [data-section="node_conf"]');
+    assert.match(await optimizerCurrent(), /8,192 particles\/rank.*50\.00% below target/);
+    await page.click('#nav-list [data-section="species"]');
+    await edit('[data-section="species"][data-key="ppc"][data-index="0"]', 8);
+    await page.click('#nav-list [data-section="node_conf"]');
+    assert.match(await optimizerCurrent(), /16,384 particles\/rank.*matches target/);
+    await setOptimizerSlider(4);
     // Older thermal inputs may carry ignored power-law settings; retain their values.
     await load('old-thermal-powerlaw.input', 'species{distribution="thermal",u_th=1,pl_slope=-3,pl_min_factor=2,pl_max_factor=50}');
     await page.click('#nav-list [data-section="species"]');

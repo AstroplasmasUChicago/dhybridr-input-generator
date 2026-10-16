@@ -3,6 +3,7 @@
 // layout: 'minmax' = the code reads this DIM2 array as all mins then all maxs (xmin,ymin,zmin,xmax,ymax,zmax);
 //   the form keeps per-axis (min,max) pairs and generator.js/parser.js permute at the file boundary
 // type: 'int','real','bool','str','strarr'
+// dimLabels: array component labels; $...$ renders inline LaTeX
 // perSpecies sections repeat n_species times
 
 const SCHEMA = {
@@ -14,7 +15,7 @@ const SCHEMA = {
     fields: [
       { key: 'ranks', label: 'ranks', type: 'int', dim: 'DIM', editor_initial_value: [1, 1, 1], required: true,
         hint: 'MPI ranks per dimension; their product is the total MPI rank count',
-        dimLabels: ['x','y','z'] },
+        dimLabels: ['$x$','$y$','$z$'] },
     ]
   },
 
@@ -40,16 +41,16 @@ const SCHEMA = {
     fields: [
       { key: 'n_cells', label: 'n_cells', type: 'int', dim: 'DIM', editor_initial_value: [128, 128, 128], required: true,
         hint: 'Grid cells per dimension',
-        dimLabels: ['Nx','Ny','Nz'] },
+        dimLabels: ['$N_x$','$N_y$','$N_z$'] },
       { key: 'box_size', label: 'box_size', type: 'real', dim: 'DIM', editor_initial_value: [64, 64, 64], required: true,
         hint: 'Domain length per dimension in code length units; coordinates run from 0 to this value',
-        dimLabels: ['Lx','Ly','Lz'] },
+        dimLabels: ['$L_x$','$L_y$','$L_z$'] },
       { key: 'boundary_types', label: 'boundary_types', type: 'strarr', dim: 'DIM2', default: ['per', 'per', 'per', 'per', 'per', 'per'],
         options: ['per','reflect','open','mirror'],
         optionLabels: { reflect: 'reflect (pec)', mirror: 'mirror (pmc)' },
         optionAliases: { pec: 'reflect', pmc: 'mirror' },
         hint: 'Field boundaries in x-low, x-high, y-low, y-high, z-low, z-high order: per = periodic, open = open, reflect/pec = perfect electric conductor, mirror/pmc = perfect magnetic conductor',
-        dimLabels: ['x\u2097','x\u1d63','y\u2097','y\u1d63','z\u2097','z\u1d63'] },
+        dimLabels: ['$x_l$','$x_r$','$y_l$','$y_r$','$z_l$','$z_r$'] },
     ]
   },
 
@@ -195,13 +196,13 @@ const SCHEMA = {
       { key: 'Ez', label: 'Ez', type: 'str', dim: 0, default: '0.', hint: 'Imposed electric field z component; spatial expression in code units', fparser: true },
       { key: 'constants', label: 'constants', type: 'real', dim: 'VARIABLE', default: [], textarea: true, hint: 'Comma-separated values for constants(1), constants(2), ... for B/E expressions; blank = none', advanced: true },
       { key: 'J_ext', label: 'J_ext', type: 'real', dim: 'VDIM', default: [0, 0, 0], hint: 'Uniform imposed current vector in code units',
-        dimLabels: ['Jx','Jy','Jz'] },
+        dimLabels: ['$J_x$','$J_y$','$J_z$'] },
       { key: 'B_noise_rms', label: 'B_noise_rms', type: 'real', dim: 'VDIM', default: [0, 0, 0], hint: 'Initial divergence-free B noise RMS: in 2D x=y; in 3D x=y=z; in 1D x=0. RMS is averaged over each shared component group',
-        dimLabels: ['x','y','z'] },
+        dimLabels: ['$x$','$y$','$z$'] },
       { key: 'add_loop', label: 'add_loop', type: 'bool', dim: 0, default: false, hint: 'Add the imposed magnetic field of a circular current loop in the xy plane' },
       { key: 'loop_radius', label: 'loop_radius', type: 'real', dim: 0, default: 0, requires: { section: 'ext_emf', key: 'add_loop', value: true }, inactiveAllowed: true, hint: 'Current-loop radius in code length units; must be positive when add_loop is enabled' },
       { key: 'loop_center', label: 'loop_center', type: 'real', dim: 'DIM', default: [0, 0, 0], requires: { section: 'ext_emf', key: 'add_loop', value: true }, inactiveAllowed: true, hint: 'Current-loop center coordinates in code length units',
-        dimLabels: ['x','y','z'] },
+        dimLabels: ['$x$','$y$','$z$'] },
       { key: 'loop_current', label: 'loop_current', type: 'real', dim: 0, default: 0, requires: { section: 'ext_emf', key: 'add_loop', value: true }, inactiveAllowed: true, hint: 'Loop current in code units; field at the center is loop_current/(2*loop_radius)' },
     ]
   },
@@ -232,13 +233,13 @@ const SCHEMA = {
     fields: [
       { key: 'dump_E', label: 'dump_E', type: 'bool', dim: 4, default: [false, false, true, true],
         hint: 'Electric field outputs: self magnitude, self components, total magnitude, total components; self = total minus imposed',
-        dimLabels: ['Self |E|','Self E\u20d7','Total |E|','Total E\u20d7'] },
+        dimLabels: ['Self $|E|$','Self $\\vec{E}$','Total $|E|$','Total $\\vec{E}$'] },
       { key: 'dump_B', label: 'dump_B', type: 'bool', dim: 4, default: [false, false, true, true],
         hint: 'Magnetic field outputs: self magnitude, self components, total magnitude, total components; self = total minus imposed',
-        dimLabels: ['Self |B|','Self B\u20d7','Total |B|','Total B\u20d7'] },
+        dimLabels: ['Self $|B|$','Self $\\vec{B}$','Total $|B|$','Total $\\vec{B}$'] },
       { key: 'dump_J', label: 'dump_J', type: 'bool', dim: 2, default: [false, false],
         hint: 'Current density outputs: magnitude, then all three components',
-        dimLabels: ['|J|','J\u20d7'] },
+        dimLabels: ['$|J|$','$\\vec{J}$'] },
       { key: 'dump_Pe', label: 'dump_Pe', type: 'bool', dim: 0, default: false, requires: { section: 'fluid_electrons', key: 'closure', value: 'evolved' },
         hint: 'Electron pressure dump (P_e); evolved closure only' },
       { key: 'dump_Te', label: 'dump_Te', type: 'bool', dim: 0, default: false, requires: { section: 'fluid_electrons', key: 'closure', value: 'evolved' },
@@ -303,12 +304,12 @@ const SCHEMA = {
       { key: 'name', label: 'name', type: 'str', dim: 0, default: 'H+', hint: 'Species name' },
       { key: 'distribution', label: 'distribution', type: 'str', dim: 0, default: 'THERMAL', options: ['THERMAL','ISO','POWERLAW','JUTTNER','BIMAXWELLIAN'], hint: 'Distribution before the drift boost: thermal Gaussian, ISO fixed-speed shell, power law, Jüttner, or bimaxwellian' },
       { key: 'ppc', label: 'ppc', type: 'int', dim: 'DIM', default: [4, 4, 4],
-        hint: 'Particles per cell per dimension; the total is their product (2,3 gives 6 particles per cell)', dimLabels: ['x','y','z'] },
+        hint: 'Particles per cell per dimension; the total is their product (2,3 gives 6 particles per cell)', dimLabels: ['$x$','$y$','$z$'] },
       { key: 'buffer_headroom', label: 'buffer_headroom', type: 'real', dim: 0, default: 0.2, build: 'CPU', hint: 'Extra particle capacity as a fraction of the initial count; 0.2 reserves 20% extra. CPU only' },
       { key: 'charge', label: 'charge', type: 'int', dim: 0, default: 1, hint: 'Signed particle charge in elementary-charge units; must be a nonzero integer' },
       { key: 'mass_to_charge_ratio', label: 'mass_to_charge_ratio', type: 'real', dim: 0, default: 1, hint: 'Positive mass-to-charge magnitude m/|q| relative to protons (1 = proton)' },
       { key: 'u_drift', label: 'u_drift', type: 'real', dim: 'VDIM', default: [0, 0, 0],
-        hint: 'Constant proper drift velocity u = γv used for the distribution boost', dimLabels: ['u_x','u_y','u_z'] },
+        hint: 'Constant proper drift velocity u = γv used for the distribution boost', dimLabels: ['$u_x$','$u_y$','$u_z$'] },
       { key: 'u_th', label: 'u_th', type: 'real', dim: 0, default: 1, distribution: 'thermal', hint: 'Proper-velocity standard deviation per component before the drift boost' },
       { key: 'u_th_perp', label: 'u_th_perp', type: 'real', dim: 0, default: 1, distribution: 'bimaxwellian', hint: 'Proper-velocity standard deviation in each direction perpendicular to imposed B; the parallel axis is x when B=0' },
       { key: 'u_shell', label: 'u_shell', type: 'real', dim: 0, default: 1, distribution: 'iso', hint: 'Fixed proper-speed magnitude |u| of the isotropic shell before the drift boost' },
@@ -317,7 +318,7 @@ const SCHEMA = {
       { key: 'u_th_parallel', label: 'u_th_parallel', type: 'real', dim: 0, default: 0, distribution: 'bimaxwellian', hint: 'Proper-velocity standard deviation parallel to imposed B; values <=0 use u_th_perp', advanced: true },
       { key: 'u_drift_profile', label: 'u_drift_profile', type: 'strarr', dim: 'VDIM_STR', default: ['', '', ''],
         fparser: true, hint: 'Three spatial expressions for proper drift velocity, replacing u_drift. Supply all three or leave all blank',
-        dimLabels: ['u_x','u_y','u_z'] },
+        dimLabels: ['$u_x$','$u_y$','$u_z$'] },
       { key: 'pl_slope', label: 'pl_slope', type: 'real', dim: 0, default: -4, distribution: 'powerlaw', inactiveAllowed: true, hint: 'Exponent of isotropic f(u) proportional to |u|^pl_slope; radial counts include an extra |u|^2 (POWERLAW only)' },
       { key: 'pl_min_factor', label: 'pl_min_factor', type: 'real', dim: 0, default: 1, distribution: 'powerlaw', inactiveAllowed: true, hint: 'Minimum proper-speed magnitude as a multiple of u_scale (POWERLAW only; requires 0 < pl_min_factor < pl_max_factor)', advanced: true },
       { key: 'pl_max_factor', label: 'pl_max_factor', type: 'real', dim: 0, default: 1000, distribution: 'powerlaw', inactiveAllowed: true, hint: 'Maximum proper-speed magnitude as a multiple of u_scale (POWERLAW only; requires 0 < pl_min_factor < pl_max_factor)', advanced: true },
@@ -325,7 +326,7 @@ const SCHEMA = {
       { key: 'mask', label: 'mask', type: 'str', dim: 0, default: '', fparser: true, hint: 'Place initial and injected particles only where this spatial expression is positive; it does not scale their weights. Blank = no mask' },
       { key: 'initial_bounds', label: 'initial_bounds', type: 'real', dim: 'DIM2', default: [-1, -1, -1, -1, -1, -1], layout: 'minmax',
         hint: 'Initial placement limits, rounded outward to grid faces before applying mask. Each -1 uses that box edge. File order: all minima, then all maxima',
-        dimLabels: ['x\u2098\u1d62\u2099','x\u2098\u2090\u2093','y\u2098\u1d62\u2099','y\u2098\u2090\u2093','z\u2098\u1d62\u2099','z\u2098\u2090\u2093'] },
+        dimLabels: ['$x_{\\min}$','$x_{\\max}$','$y_{\\min}$','$y_{\\max}$','$z_{\\min}$','$z_{\\max}$'] },
       { key: 'constants', label: 'constants', type: 'real', dim: 'VARIABLE', default: [], textarea: true, hint: 'Comma-separated values for constants(1), constants(2), ... for number_density/mask/u_drift_profile; blank = none', advanced: true },
       { key: 'follow_particles', label: 'follow_particles', type: 'bool', dim: 0, default: false, hint: 'Assign persistent two-part particle IDs; raw and track diagnostics enable this automatically' },
       { key: 'check_duplicate_ids', label: 'check_duplicate_ids', type: 'bool', dim: 0, default: false, hint: 'Check tagged particles for duplicate IDs on each MPI rank (debug)' },
@@ -343,7 +344,7 @@ const SCHEMA = {
       { key: 'boundary_types', label: 'boundary_types', type: 'strarr', dim: 'DIM2', default: ['per', 'per', 'per', 'per', 'per', 'per'],
         options: ['per','reflect','open'],
         hint: 'Particle boundaries in x-low, x-high, y-low, y-high, z-low, z-high order: per = periodic, reflect = reverse normal velocity, open = remove escaping particles',
-        dimLabels: ['x\u2097','x\u1d63','y\u2097','y\u1d63','z\u2097','z\u1d63'] },
+        dimLabels: ['$x_l$','$x_r$','$y_l$','$y_r$','$z_l$','$z_r$'] },
     ]
   },
 
@@ -358,9 +359,9 @@ const SCHEMA = {
       { key: 'transverse_bounds', label: 'transverse_bounds', type: 'real', dim: 'BDIM', editor_initial_value: [0, 0, 0, 0], required_if: { dimensions: [2, 3] }, inputSize: 4, hint: 'Extent along the plane, clipped to the box and rounded outward to grid faces. Set positive widths; file order is all minima then all maxima',
         dimLabels: ['min 1','min 2','max 1','max 2'] },
       { key: 'ppc', label: 'ppc', type: 'int', dim: 'DIM', inherit: 'species.ppc',
-        hint: 'Particles per cell per dimension; total is their product. Omitted entries inherit species ppc', dimLabels: ['x','y','z'] },
+        hint: 'Particles per cell per dimension; total is their product. Omitted entries inherit species ppc', dimLabels: ['$x$','$y$','$z$'] },
       { key: 'u_drift', label: 'u_drift', type: 'real', dim: 'VDIM', editor_initial_value: [0, 0, 0], required: true,
-        hint: 'Proper drift velocity u = γv; its nonzero normal component sets injection direction and supply, and boosts sampled velocities unless no_boost is true', dimLabels: ['u_x','u_y','u_z'] },
+        hint: 'Proper drift velocity u = γv; its nonzero normal component sets injection direction and supply, and boosts sampled velocities unless no_boost is true', dimLabels: ['$u_x$','$u_y$','$u_z$'] },
       { key: 'u_th', label: 'u_th', type: 'real', dim: 0, inherit: 'species.u_th', distribution: 'thermal', hint: 'Proper-velocity standard deviation per component before boost; omitted = species value' },
       { key: 'u_th_perp', label: 'u_th_perp', type: 'real', dim: 0, inherit: 'species.u_th_perp', distribution: 'bimaxwellian', hint: 'Perpendicular proper-velocity standard deviation; preserves the species parallel/perpendicular ratio. Omitted = species value' },
       { key: 'u_shell', label: 'u_shell', type: 'real', dim: 0, inherit: 'species.u_shell', distribution: 'iso', hint: 'Fixed proper-speed magnitude |u| before boost; omitted = species value' },
@@ -382,7 +383,7 @@ const SCHEMA = {
     fields: [
       { key: 'dump_bulk_velocity', label: 'dump_bulk_velocity', type: 'bool', dim: 2, default: [false, false],
         hint: 'Bulk ordinary velocity v: magnitude, then all three components',
-        dimLabels: ['|v|','v\u20d7'] },
+        dimLabels: ['$|v|$','$\\vec{v}$'] },
       { key: 'dump_pressure', label: 'dump_pressure', type: 'bool', dim: 2, default: [false, false],
         hint: 'Scalar pressure (Pxx+Pyy+Pzz)/3, then six pressure-tensor components',
         dimLabels: ['trace/3','components'] },
@@ -413,10 +414,10 @@ const SCHEMA = {
         ] },
       { key: 'u_bins', label: 'u_bins', type: 'int', dim: 'VDIM', default: [512, 512, 512],
         min: 1, hint: 'Positive bins per proper-velocity component; omitted components use 512. |u| uses their average rounded down; ln(E) uses 256 bins',
-        dimLabels: ['u1','u2','u3'] },
+        dimLabels: ['$u_1$','$u_2$','$u_3$'] },
       { key: 'x_bins', label: 'x_bins', type: 'int', dim: 'DIM', default: [256, 256, 256],
         hint: 'Histogram bins per spatial dimension; each must be at least 1',
-        dimLabels: ['x','y','z'] },
+        dimLabels: ['$x$','$y$','$z$'] },
     ]
   },
 
@@ -431,7 +432,7 @@ const SCHEMA = {
       { key: 'dump_dt', label: 'dump_dt', type: 'real', dim: 0, default: -1, hint: 'Simulation time between raw dumps; set dump_every=-1 to use this. -1 = use dump_every', advanced: true },
       { key: 'bounds', label: 'bounds', type: 'real', dim: 'DIM2', default: [-1, -1, -1, -1, -1, -1], layout: 'minmax',
         hint: 'Keep particles with min <= coordinate < max on every axis. Each -1 uses that box edge. File order: all minima, then all maxima',
-        dimLabels: ['x\u2098\u1d62\u2099','x\u2098\u2090\u2093','y\u2098\u1d62\u2099','y\u2098\u2090\u2093','z\u2098\u1d62\u2099','z\u2098\u2090\u2093'] },
+        dimLabels: ['$x_{\\min}$','$x_{\\max}$','$y_{\\min}$','$y_{\\max}$','$z_{\\min}$','$z_{\\max}$'] },
       { key: 'sample_fraction', label: 'sample_fraction', type: 'real', dim: 0, default: 1, hint: 'Random fraction of particles passing bounds, speed_min, and filter; 0 = none, 1 = all' },
       { key: 'speed_min', label: 'speed_min', type: 'real', dim: 0, default: 0, hint: 'Minimum ordinary speed |v| in code velocity units; equality is included' },
       { key: 'filter', label: 'filter', type: 'str', dim: 0, default: '1.', fparser: true, hint: 'Particle filter expression: result > 0, combined with bounds, speed_min, and sample_fraction. Uses spatial coordinates and ordinary velocity vx,vy,vz.' },

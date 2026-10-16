@@ -22,7 +22,7 @@
     setActiveSection('node_conf');
     updatePreview();
 
-    // Render dt formula once KaTeX is ready
+    // Render formulas and variable labels once KaTeX is ready.
     autoUpdateDt();
     autoUpdateTurbK();
     autoCapXres();
@@ -31,7 +31,12 @@
     if (typeof katex !== 'undefined') {
       updateDtRecommendation();
     } else {
-      document.querySelector('script[src*="katex"]')?.addEventListener('load', () => updateDtRecommendation());
+      document.querySelector('script[src*="katex"]')?.addEventListener('load', () => {
+        document.querySelectorAll('[data-tex]').forEach(el => {
+          katex.render(el.dataset.tex, el, {throwOnError: false});
+        });
+        updateDtRecommendation();
+      });
     }
 
     wireDropdownGlobals();
@@ -450,10 +455,10 @@
         html += `<div id="e-field-plot">`;
         html += `<div id="e-field-controls">`;
         html += `<label>Field: <select id="e-field-component">`;
-        html += `<option value="mag" selected>|E|</option>`;
-        html += `<option value="Ex">Ex</option>`;
-        html += `<option value="Ey">Ey</option>`;
-        html += `<option value="Ez">Ez</option>`;
+        html += `<option value="mag" selected>$|E|$</option>`;
+        html += `<option value="Ex">$E_x$</option>`;
+        html += `<option value="Ey">$E_y$</option>`;
+        html += `<option value="Ez">$E_z$</option>`;
         html += `</select></label>`;
         html += ` <span class="plot-3d-controls"${currentDim === 3 ? '' : ' style="display:none"'}>`;
         html += `<label>Slice: <select id="e-field-slice-axis">`;
@@ -472,10 +477,10 @@
         html += `<div id="u_drift_profile-plot">`;
         html += `<div id="u_drift_profile-controls">`;
         html += `<label>Field: <select id="u_drift_profile-component">`;
-        html += `<option value="mag" selected>|u|</option>`;
-        html += `<option value="vx">ux</option>`;
-        html += `<option value="vy">uy</option>`;
-        html += `<option value="vz">uz</option>`;
+        html += `<option value="mag" selected>$|u|$</option>`;
+        html += `<option value="vx">$u_x$</option>`;
+        html += `<option value="vy">$u_y$</option>`;
+        html += `<option value="vz">$u_z$</option>`;
         html += `</select></label>`;
         html += ` <span class="plot-3d-controls"${currentDim === 3 ? '' : ' style="display:none"'}>`;
         html += `<label>Slice: <select id="u_drift_profile-slice-axis">`;
@@ -513,10 +518,10 @@
         html += `<div id="turb-force-plot">`;
         html += `<div id="turb-force-controls">`;
         html += `<label>Field: <select id="turb-force-component">`;
-        html += `<option value="mag" selected>|F|</option>`;
-        html += `<option value="Fx">Fx</option>`;
-        html += `<option value="Fy">Fy</option>`;
-        html += `<option value="Fz">Fz</option>`;
+        html += `<option value="mag" selected>$|F|$</option>`;
+        html += `<option value="Fx">$F_x$</option>`;
+        html += `<option value="Fy">$F_y$</option>`;
+        html += `<option value="Fz">$F_z$</option>`;
         html += `</select></label>`;
         html += ` <button type="button" id="turb-force-reseed" class="turb-force-reseed-btn">Reseed</button>`;
         html += `</div>`;
@@ -549,9 +554,9 @@
         html += `Adjust the target for your hardware and run.</p>`;
         html += `<div class="node-optimizer-body">`;
         html += `<div class="node-optimizer-input-row">`;
-        html += `<label>${currentBuild} target particles/rank:</label>`;
-        html += `<input type="range" id="node-optimizer-slider" min="4" max="${currentBuild === 'GPU' ? 9 : 8}" step="any" value="${Math.log10(target)}">`;
-        html += `<span id="node-optimizer-target-label" class="node-opt-target-label">${target.toLocaleString()}</span>`;
+        html += `<label for="node-optimizer-target">${currentBuild} target particles/rank:</label>`;
+        html += `<input type="text" id="node-optimizer-target" spellcheck="false" value="${target.toExponential()}">`;
+        html += `<input type="range" id="node-optimizer-slider" aria-label="${currentBuild} target particles per rank slider" min="4" max="${currentBuild === 'GPU' ? 9 : 8}" step="any" value="${Math.log10(target)}">`;
         html += `</div>`;
         html += `<div id="node-optimizer-results"></div>`;
         html += `</div>`;
@@ -563,10 +568,10 @@
         html += `<div id="b-field-plot">`;
         html += `<div id="b-field-controls">`;
         html += `<label>Field: <select id="b-field-component">`;
-        html += `<option value="mag" selected>|B|</option>`;
-        html += `<option value="Bx">Bx</option>`;
-        html += `<option value="By">By</option>`;
-        html += `<option value="Bz">Bz</option>`;
+        html += `<option value="mag" selected>$|B|$</option>`;
+        html += `<option value="Bx">$B_x$</option>`;
+        html += `<option value="By">$B_y$</option>`;
+        html += `<option value="Bz">$B_z$</option>`;
         html += `</select></label>`;
         html += ` <label>Colormap: <select id="b-field-cmap">`;
         html += `<option value="coolwarm">Coolwarm</option>`;
@@ -654,6 +659,16 @@
     </div>`;
   }
 
+  function formatMathLabel(label) {
+    return label.split(/(\$[^$]+\$)/g).map(part => {
+      if (!part.startsWith('$')) return escapeHtml(part);
+      const tex = part.slice(1, -1);
+      const content = typeof katex !== 'undefined'
+        ? katex.renderToString(tex, {throwOnError: false}) : escapeHtml(tex);
+      return `<span data-tex="${escapeHtml(tex)}">${content}</span>`;
+    }).join('');
+  }
+
   function buildArrayInput(skey, field, arrSize, speciesIdx) {
     const labels = field.dimLabels || [];
     const dataAttr = speciesIdx !== undefined
@@ -665,7 +680,7 @@
       for (let i = 0; i < arrSize; i++) {
         const dimVis = getArrayElementDimClass(field, i);
         html += `<div class="array-col ${dimVis}">`;
-        if (labels[i]) html += `<span class="label">${labels[i]}</span>`;
+        if (labels[i]) html += `<span class="label">${formatMathLabel(labels[i])}</span>`;
         if (field.options) {
           html += `<select ${dataAttr} data-index="${i}">`;
           for (const opt of field.options) {
@@ -686,7 +701,7 @@
       for (let i = 0; i < arrSize; i++) {
         const dimVis = getArrayElementDimClass(field, i);
         html += `<div class="array-col ${dimVis}">`;
-        if (labels[i]) html += `<span class="label">${labels[i]}</span>`;
+        if (labels[i]) html += `<span class="label">${formatMathLabel(labels[i])}</span>`;
         html += `<div class="checkbox-row"><input type="checkbox" ${dataAttr} data-index="${i}"></div>`;
         html += `</div>`;
       }
@@ -701,7 +716,7 @@
     for (let i = 0; i < maxSize; i++) {
       const dimVis = getArrayElementDimClass(field, i);
       html += `<div class="array-col ${dimVis}">`;
-      if (labels[i]) html += `<span class="label">${labels[i]}</span>`;
+      if (labels[i]) html += `<span class="label">${formatMathLabel(labels[i])}</span>`;
       const extraAttr = field.type === 'int' ? ' inputmode="numeric" class="int-field"' : '';
       const defVal = (field.editor_initial_value ?? field.default)?.[i] ?? '';
       html += `<input type="text" ${dataAttr} data-index="${i}"${extraAttr} style="width:80px" placeholder="${defVal}">`;
@@ -1262,8 +1277,9 @@
           debouncedRenderTurbForcePlot();
         }
 
-        // Cross-section: if n_cells, n_species, or ppc changed, update node optimizer
-        if ((elSection === 'grid_space' && elKey === 'n_cells') ||
+        // Update the optimizer when rank or particle counts change.
+        if ((elSection === 'node_conf' && elKey === 'ranks') ||
+            (elSection === 'grid_space' && elKey === 'n_cells') ||
             (elSection === 'particles' && elKey === 'n_species') ||
             (elSection === 'species' && elKey === 'ppc')) {
           renderNodeOptimizer();
@@ -1625,14 +1641,14 @@
 
     function refresh() {
       const cur = getVal();
-      button.textContent = labelFor(cur);
+      button.innerHTML = formatMathLabel(labelFor(cur));
       button.disabled = select.disabled;
       list.innerHTML = '';
       for (const o of Array.from(select.options)) {
         const li = document.createElement('li');
         li.className = 'cs-option' + (o.value === cur ? ' selected' : '');
         li.setAttribute('role', 'option');
-        li.textContent = o.textContent;
+        li.innerHTML = formatMathLabel(o.textContent);
         li.addEventListener('click', () => {
           const changed = getVal() !== o.value;
           setVal(o.value);
@@ -4853,9 +4869,9 @@
         const arrayDiv = bdInput.closest('.array-col')?.parentElement;
         if (arrayDiv) {
           const axLabels = bdAxes.map(a => a.label);
-          const labelArr = [...axLabels.map(l => `${l}-start`), ...axLabels.map(l => `${l}-end`)];
+          const labelArr = [...axLabels.map(l => `$${l}_{\\min}$`), ...axLabels.map(l => `$${l}_{\\max}$`)];
           const labelEls = arrayDiv.querySelectorAll('.array-col .label');
-          labelEls.forEach((el, i) => { if (labelArr[i]) el.textContent = labelArr[i]; });
+          labelEls.forEach((el, i) => { if (labelArr[i]) el.innerHTML = formatMathLabel(labelArr[i]); });
           // Set placeholders showing valid range on each transverse_bounds input
           // starts: 0…max, ends: 0…max
           const bdInputs = arrayDiv.querySelectorAll('input[data-key="transverse_bounds"]');
@@ -5369,43 +5385,79 @@
     if (!resultsDiv) return;
 
     const slider = document.getElementById('node-optimizer-slider');
-    const targetLabel = document.getElementById('node-optimizer-target-label');
-    if (!slider) return;
+    const targetInput = document.getElementById('node-optimizer-target');
+    if (!slider || !targetInput) return;
 
-    // Bind slider event if not already bound
     if (!slider.dataset.bound) {
       slider.dataset.bound = '1';
       slider.addEventListener('input', () => {
-        const val = Math.round(Math.pow(10, parseFloat(slider.value)));
-        nodeOptimizerTargets[currentBuild] = val;
-        if (targetLabel) targetLabel.textContent = val.toLocaleString();
+        targetInput.value = Math.round(Math.pow(10, Number(slider.value))).toExponential();
         renderNodeOptimizer();
+      });
+      targetInput.addEventListener('input', renderNodeOptimizer);
+      targetInput.addEventListener('change', () => {
+        if (targetInput.validity.valid) targetInput.value = Number(targetInput.value).toExponential();
       });
     }
 
-    const targetPPP = nodeOptimizerTargets[currentBuild];
-
-    const { totalParticles, idealNprocs, candidates, recommended } = computeNodeRecommendations(targetPPP);
-
-    if (candidates.length === 0) {
-      resultsDiv.innerHTML = '<div class="node-opt-empty">No nearby rank count leaves at least four cells per rank along every axis. Increase the particle target or grid size.</div>';
+    const targetPPP = Number(targetInput.value);
+    const validTarget = Number.isSafeInteger(targetPPP) && targetPPP > 0;
+    targetInput.setCustomValidity(validTarget ? '' : 'Enter a positive whole number of particles.');
+    targetInput.setAttribute('aria-invalid', String(!validTarget));
+    if (!validTarget) {
+      resultsDiv.innerHTML = '<div class="node-opt-empty">Enter a positive whole number of particles.</div>';
       return;
     }
+    nodeOptimizerTargets[currentBuild] = targetPPP;
+    const exponent = Math.log10(targetPPP);
+    slider.min = Math.min(4, exponent);
+    slider.max = Math.max(currentBuild === 'GPU' ? 9 : 8, exponent);
+    slider.value = exponent;
+
+    const { totalParticles, idealNprocs, candidates, recommended } = computeNodeRecommendations(targetPPP);
+    const targetDifference = (particles, compact = false) => {
+      const percent = 100 * (particles - targetPPP) / targetPPP;
+      if (Math.abs(percent) < 1e-10) return compact ? '0%' : 'matches target';
+      const amount = Math.abs(percent) < 0.01 ? '<0.01' : Math.abs(percent).toFixed(2);
+      return compact ? `${percent > 0 ? '+' : '-'}${amount}%`
+        : `${amount}% ${percent > 0 ? 'above' : 'below'} target`;
+    };
 
     const axesLabel = 'ranks';
 
     let html = '';
     html += `<div class="node-opt-summary">`;
     html += `<span>Total particles: <strong>${totalParticles.toLocaleString()}</strong></span>`;
-    html += `<span>Estimated MPI ranks: <strong>${idealNprocs.toFixed(1)}</strong></span>`;
+    const rankEstimate = idealNprocs < 1 ? '1 (minimum)' : idealNprocs.toFixed(1);
+    html += `<span>Estimated MPI ranks: <strong>${rankEstimate}</strong></span>`;
+    html += `</div>`;
+    const ranks = (state.node_conf?.ranks || []).slice(0, currentDim).map(Number);
+    html += `<div id="node-optimizer-current" class="node-opt-summary">`;
+    if (ranks.length === currentDim && ranks.every(n => Number.isSafeInteger(n) && n > 0)) {
+      const currentRanks = ranks.reduce((a, b) => a * b, 1);
+      const particlesPerRank = totalParticles / currentRanks;
+      html += `<span>Current input: <strong>${currentRanks.toLocaleString()} MPI rank${currentRanks === 1 ? '' : 's'}</strong>, `;
+      html += `estimated <strong>${particlesPerRank.toLocaleString(undefined, {maximumFractionDigits: 2})} particles/rank</strong> `;
+      html += `(<strong>${targetDifference(particlesPerRank)}</strong>).</span>`;
+    } else {
+      html += `<span>Set ranks in every dimension to compare the current input with the target.</span>`;
+    }
     html += `</div>`;
 
-    html += `<table class="node-opt-table">`;
+    if (candidates.length === 0) {
+      resultsDiv.innerHTML = html + '<div class="node-opt-empty">No nearby rank count leaves at least four cells per rank along every axis. Increase the particle target or grid size.</div>';
+      return;
+    }
+
+    html += `<h3 id="node-optimizer-suggestions" class="node-opt-suggestions-title">Suggested MPI rank layouts</h3>`;
+    html += `<p class="node-opt-summary">The highlighted row is closest to your target. Apply updates ranks in your input file.</p>`;
+    html += `<div class="node-opt-table-scroll"><table class="node-opt-table" aria-labelledby="node-optimizer-suggestions">`;
     html += `<thead><tr>`;
     html += `<th title="Total number of MPI ranks">Total ranks</th>`;
     html += `<th title="MPI ranks per dimension">${axesLabel}</th>`;
-    html += `<th title="Grid cells per MPI rank. Hover rows for counts along each axis.">cells/rank</th>`;
-    html += `<th title="Estimated particles per MPI rank">particles/rank</th>`;
+    html += `<th title="Grid cells per MPI rank. Hover rows for counts along each axis.">cells/<wbr>rank</th>`;
+    html += `<th title="Estimated particles per MPI rank">particles/<wbr>rank</th>`;
+    html += `<th>vs target</th>`;
     html += `<th></th>`;
     html += `</tr></thead><tbody>`;
 
@@ -5420,10 +5472,11 @@
       html += `<td>${axes}</td>`;
       html += `<td title="${cellsPerDim} per dim">${Math.round(c.cellsPerProc).toLocaleString()}</td>`;
       html += `<td>${Math.round(c.particlesPerProc).toLocaleString()}</td>`;
+      html += `<td title="${targetDifference(c.particlesPerProc)}">${targetDifference(c.particlesPerProc, true)}</td>`;
       html += `<td><button type="button" class="node-opt-apply" data-proc-axes="${c.procAxes.join(',')}">${isRec ? 'Apply' : 'Apply'}</button></td>`;
       html += `</tr>`;
     }
-    html += `</tbody></table>`;
+    html += `</tbody></table></div>`;
 
     resultsDiv.innerHTML = html;
 
@@ -5442,6 +5495,7 @@
           const input = document.querySelector(`[data-section="node_conf"][data-key="ranks"][data-index="${i}"]`);
           if (input) input.value = axes[i];
         }
+        renderNodeOptimizer();
         updatePreview();
       });
     });
