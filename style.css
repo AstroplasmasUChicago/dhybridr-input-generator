@@ -440,80 +440,80 @@ header h1 { font-size: 18px; font-weight: 600; }
   font-style: italic;
 }
 
-/* nsp density heatmap plot */
-#nsp-plot {
+/* number_density density heatmap plot */
+#number_density-plot {
   padding: 8px 14px 12px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
 }
-#nsp-canvas {
+#number_density-canvas {
   border-radius: 4px;
   max-width: 100%;
   height: auto;
 }
-#nsp-plot-msg {
+#number_density-plot-msg {
   font-size: 12px;
   color: var(--muted);
   font-style: italic;
 }
-#nsp-controls {
+#number_density-controls {
   font-size: 12px; color: var(--muted);
 }
-#nsp-controls select {
+#number_density-controls select {
   font-size: 12px; background: var(--surface); color: var(--text);
   border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px;
 }
 
-/* vsp velocity plot */
-#vsp-plot {
+/* u_drift_profile velocity plot */
+#u_drift_profile-plot {
   padding: 8px 14px 12px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
 }
-#vsp-canvas {
+#u_drift_profile-canvas {
   border-radius: 4px;
   max-width: 100%;
   height: auto;
 }
-#vsp-plot-msg {
+#u_drift_profile-plot-msg {
   font-size: 12px;
   color: var(--muted);
   font-style: italic;
 }
-#vsp-controls {
+#u_drift_profile-controls {
   font-size: 12px; color: var(--muted);
 }
-#vsp-controls select {
+#u_drift_profile-controls select {
   font-size: 12px; background: var(--surface); color: var(--text);
   border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px;
 }
 
-/* selectrule spatial plot */
-#selectrule-plot {
+/* filter spatial plot */
+#filter-plot {
   padding: 8px 14px 12px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
 }
-#selectrule-canvas {
+#filter-canvas {
   border-radius: 4px;
   max-width: 100%;
   height: auto;
 }
-#selectrule-plot-msg {
+#filter-plot-msg {
   font-size: 12px;
   color: var(--muted);
   font-style: italic;
 }
-#selectrule-controls {
+#filter-controls {
   font-size: 12px; color: var(--muted);
 }
-#selectrule-controls select {
+#filter-controls select {
   font-size: 12px; background: var(--surface); color: var(--text);
   border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px;
 }
@@ -704,33 +704,33 @@ input.int-field.rejected {
 }
 @keyframes fadeout { 0%,70%{opacity:1} 100%{opacity:0} }
 
-/* xres recommended values pills */
-.xres-recommendations {
+/* x_bins recommended values pills */
+.x_bins-recommendations {
   margin-top: 6px; display: flex; flex-direction: column; gap: 4px;
 }
-.xres-rec-row {
+.x_bins-rec-row {
   display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
 }
-.xres-rec-row .rec-label {
+.x_bins-rec-row .rec-label {
   font-size: 11px; color: var(--muted); min-width: 14px; font-weight: 600;
 }
-.xres-rec-pill {
+.x_bins-rec-pill {
   background: var(--surface); color: var(--muted); border: 1px solid var(--border);
   border-radius: 12px; padding: 2px 10px; font-size: 11px; cursor: pointer;
   font-family: 'SF Mono', Menlo, monospace; transition: all 0.15s;
   white-space: nowrap; line-height: 1.4;
 }
-.xres-rec-pill:hover {
+.x_bins-rec-pill:hover {
   border-color: var(--accent); color: var(--accent); background: var(--accent-dim);
 }
-.xres-rec-pill .pill-frac {
+.x_bins-rec-pill .pill-frac {
   font-size: 9px; color: var(--muted); margin-left: 2px;
 }
-.xres-rec-pill:hover .pill-frac { color: var(--accent); }
+.x_bins-rec-pill:hover .pill-frac { color: var(--accent); }
 
-/* xres validation warning */
-.xres-validation-msg { margin-top: 4px; }
-.xres-validation-msg .validation-warn {
+/* x_bins validation warning */
+.x_bins-validation-msg { margin-top: 4px; }
+.x_bins-validation-msg .validation-warn {
   padding: 4px 10px; margin-bottom: 2px; border-radius: 5px;
   background: #d299221a; border: 1px solid #d2992233;
   color: #d29922; font-size: 11px;
@@ -906,3 +906,8 @@ tr.node-opt-recommended .node-opt-apply {
   .array-inputs input { width: 60px !important; }
   .field-input input, .field-input select { font-size: 16px; } /* prevent iOS zoom */
 }
+
+#load-report { margin: 16px; padding: 12px; border: 1px solid var(--border, #30363d); border-radius: 6px; }
+#load-report details { margin-top: 8px; }
+#load-report li { margin: 4px 0; }
+#load-report.load-error { border-color: #e66; }

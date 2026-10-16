@@ -1,11 +1,16 @@
 // Generate dHybridR Fortran namelist input file from form state
 
 // A field with `requires` exists only while another section's key has the given
-// value (kappa and dmp_pefld belong to the evolved electron closure); the code
+// value (kappa and dump_Pe belong to the evolved electron closure); the code
 // rejects it otherwise, so it is neither shown nor emitted.
-function fieldRequirementMet(field, state) {
+function fieldRequirementMet(field, state, speciesIndex) {
+  if (field.distribution) {
+    const distribution = String(state?.species?.[speciesIndex ?? 0]?.distribution || 'thermal').toLowerCase();
+    if (distribution !== field.distribution) return false;
+  }
   if (!field.requires) return true;
-  return state?.[field.requires.section]?.[field.requires.key] === field.requires.value;
+  const value = state?.[field.requires.section]?.[field.requires.key] ?? 'polytropic';
+  return String(value).toLowerCase() === field.requires.value;
 }
 
 function generateInputFile(state, dim, build) {
@@ -37,12 +42,12 @@ function generateInputFile(state, dim, build) {
     const sec = SCHEMA[skey];
     const data = state[skey];
     if (!sec || !data) continue;
-    if (sec.enabled === false && !data._enabled) continue;
+    if (data._included === false || (sec.enabled === false && !data._enabled)) continue;
     lines.push(...formatSection(sec, skey, data, dim, build, state));
     lines.push('');
   }
 
-  const numSpecies = state.particles?.num_species || 1;
+  const numSpecies = state.particles?.n_species || state.species?.length || 1;
   for (let sp = 0; sp < numSpecies; sp++) {
     lines.push(`!----------information for species ${sp+1}` + '-'.repeat(40));
     for (const skey of perSpeciesSections) {
@@ -55,13 +60,14 @@ function generateInputFile(state, dim, build) {
         const injectors = dataArr[sp] || [];
         for (let inj = 0; inj < injectors.length; inj++) {
           const data = injectors[inj] || {};
-          if (sec.enabled === false && !data._enabled) continue;
+          if (data._included === false || (sec.enabled === false && !data._enabled)) continue;
           lines.push(...formatSection(sec, skey, data, dim, build, state, sp+1, inj+1));
           lines.push('');
         }
       } else {
-        const data = dataArr[sp] || {};
-        if (sec.enabled === false && !data._enabled) continue;
+        const data = dataArr[sp];
+        if (!data) continue;
+        if (data._included === false || (sec.enabled === false && !data._enabled)) continue;
         lines.push(...formatSection(sec, skey, data, dim, build, state, sp+1));
         lines.push('');
       }
@@ -84,18 +90,37 @@ function formatSection(sec, skey, data, dim, build, state, speciesNum, injectorN
   lines.push('{');
 
   for (const field of sec.fields) {
-    // Build-specific fields (e.g. gpu_mem_frac on GPU, spare_size on CPU) are
+    // Build-specific fields (e.g. gpu_memory_fraction on GPU, buffer_headroom on CPU) are
     // only emitted for the matching build target; the other build rejects them.
     if (field.build && field.build !== build) continue;
-    if (!fieldRequirementMet(field, state)) continue;
+    if (!fieldRequirementMet(field, state, speciesNum ? speciesNum - 1 : undefined)) continue;
+    if (data._present && !data._present.includes(field.key)) continue;
     let val = data[field.key];
-    // A locked field is pinned to its default value regardless of the deck
-    // (e.g. ifsmooth/compensate are hardcoded in the solver).
+    // Locked form values use their schema defaults.
     if (field.locked) {
       val = field.default;
     }
-    if (field.advanced && isDefaultValue(field, val, dim)) continue;
+    if (!data._present && field.advanced && isDefaultValue(field, val, dim)) continue;
     if (val === undefined || val === null) continue;
+    const size = getArraySize(field.dim, dim);
+    const indices = data._indices?.[field.key];
+    if (field.dim === 'BDIM' && dim === 1 && !indices) continue;
+    if ((field.key === 'phase_spaces' || field.quotedList) && indices && Math.max(...indices) !== indices.length) {
+      const values = String(val).split(',');
+      for (const index of [...indices].sort((a, b) => a - b)) {
+        const scalar = { ...field, key: `${field.key}(${index})`, quotedList: false };
+        lines.push(`\t${formatValue(scalar, values[index - 1], dim)},`);
+      }
+      continue;
+    }
+    if ((size > 0 || field.inputSize) && indices && (indices.length < size || Math.max(...indices) > size)) {
+      const values = field.layout === 'minmax' ? pairsToMinMax(val) : val;
+      for (const index of [...indices].sort((a, b) => a - b)) {
+        const scalar = { ...field, key: `${field.key}(${index})`, dim: 0 };
+        lines.push(`\t${formatValue(scalar, values[index - 1], dim)},`);
+      }
+      continue;
+    }
     const formatted = formatValue(field, val, dim);
     if (formatted === null) continue;
 
@@ -129,15 +154,18 @@ function formatValue(field, val, dim) {
     if (field.layout === 'minmax') arr = pairsToMinMax(arr);
 
     if (field.type === 'strarr') {
-      // For fparser arrays (e.g. vsp): if any component is non-empty, fill empty ones with "0."
+      // For fparser arrays (e.g. u_drift_profile): if any component is non-empty, fill empty ones with "0."
       // Fortran requires all components set for the function to activate
       if (field.fparser && arr.some(v => String(v).trim() !== '')) {
         arr = arr.map(v => String(v).trim() === '' ? '0.' : v);
       }
       const parts = arr.map(v => {
         let sv = String(v);
-        if (field.fparser) sv = sv.replace(/\bpi\b/gi, '3.14159265358979');
-        return `"${sv}"`;
+        if (field.fparser) {
+          sv = sv.replace(/\bpi\b/gi, '3.14159265358979');
+          if (sv.length > 4095) throw new Error(`${field.key} exceeds 4095 expression characters.`);
+        }
+        return `"${sv.replace(/"/g, '""')}"`;
       });
       return `${field.key}=${parts.join(',')}`;
     } else if (field.type === 'bool') {
@@ -149,26 +177,29 @@ function formatValue(field, val, dim) {
     }
   }
 
-  // Special: a quoted-list field (phasespaces, ascent outputs) is stored as a single
+  // Special: a quoted-list field (phase_spaces, ascent outputs) is stored as a single
   // comma-separated string but emitted as individual quoted strings.
-  if ((field.key === 'phasespaces' || field.quotedList) && field.type === 'str') {
+  if ((field.key === 'phase_spaces' || field.quotedList) && field.type === 'str') {
     const items = String(val).split(',').map(s => s.trim()).filter(s => s);
-    if (items.length === 0) return null;
-    const parts = items.map(s => `"${s}"`);
+    if (items.length === 0) return `${field.key}=""`;
+    const parts = items.map(s => `"${s.replace(/"/g, '""')}"`);
     return `${field.key}=${parts.join(',')}`;
   }
 
   // Scalar
   if (field.type === 'bool') {
     return `${field.key}=${val ? '.true.' : '.false.'}`;
-  } else if (field.type === 'str') {
+  } else if (field.type === 'str' || field.type === 'strarr') {
     let sval = String(val);
     // Replace pi with numeric value for Fortran fparser compatibility
-    if (field.fparser) sval = sval.replace(/\bpi\b/gi, '3.14159265358979');
-    if (needsQuotes(field)) {
-      return `${field.key}="${sval}"`;
+    if (field.fparser) {
+      sval = sval.replace(/\bpi\b/gi, '3.14159265358979');
+      if (sval.length > 4095) throw new Error(`${field.key} exceeds 4095 expression characters.`);
     }
-    return `${field.key}="${sval}"`;
+    if (needsQuotes(field)) {
+      return `${field.key}="${sval.replace(/"/g, '""')}"`;
+    }
+    return `${field.key}="${sval.replace(/"/g, '""')}"`;
   } else {
     return `${field.key}=${formatNumber(val, field.type)}`;
   }
@@ -184,7 +215,7 @@ function parseConstantValues(text) {
     const literal = repeated ? repeated[2] : entry.trim();
     const value = Number(literal.replace(/d/gi, 'e'));
     if (!Number.isSafeInteger(count) || count < 1 || !/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eEdD][+-]?\d+)?$/.test(literal) || !Number.isFinite(value)) {
-      throw new Error(`Invalid ct value: "${entry.trim()}". Use comma-separated real numbers.`);
+      throw new Error(`Invalid constants value: "${entry.trim()}". Use comma-separated real numbers.`);
     }
     for (let i = 0; i < count; i++) values.push(value);
   }

@@ -12,10 +12,10 @@ It is a static page (HTML, CSS, and JavaScript), so there is no server or build 
 ## What it does
 
 - Covers all 19 dHybridR namelists and 100+ parameters, including Ascent in-situ visualization.
-- CPU or GPU build target: a header selector shows only the fields that build accepts (for example `gpu_mem_frac` on GPU, `spare_size` on CPU). Loading a file auto-detects the build.
+- CPU or GPU build target: a header selector shows only the fields that build accepts (for example `gpu_memory_fraction` on GPU, `buffer_headroom` on CPU). Loading a file auto-detects the build.
 - 1D / 2D / 3D switching, with fields that adapt automatically.
 - Live preview of the generated input file as you edit.
-- Load an existing input file to populate every field.
+- Load an existing input file, convert supported old names, and review the changes.
 - Built-in presets (periodic box, shock, Alfven wave) to start from.
 - Multiple species, each with its own boundaries, diagnostics, injectors, and tracking.
 - Copy to clipboard or download a ready-to-run input file.

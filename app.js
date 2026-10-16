@@ -2,18 +2,18 @@
 
 (function() {
   let currentDim = 2;
-  let currentBuild = 'CPU';  // 'CPU' or 'GPU': gates build-specific fields (gpu_mem_frac vs spare_size)
+  let currentBuild = 'CPU';  // 'CPU' or 'GPU': gates build-specific fields (gpu_memory_fraction vs buffer_headroom)
   let dimDropdown = null, buildDropdown = null;  // header custom dropdowns (see createDropdown)
   let state = {};       // { sectionKey: { field: value } } or { sectionKey: [ {field:value}, ... ] } for perSpecies
   let activeSection = 'node_conf';
   let activeSpeciesIdx = {};  // { sectionKey: speciesIndex }
-  let lastMeaningfulBoxsize = [0, 0, 0]; // tracks last non-zero boxsize for injector snapping
-  let turbKAuto = true; // when true, ext_force kmin/kmax track boxsize (4π/Lx, 6π/Lx)
+  let lastMeaningfulBoxsize = [0, 0, 0]; // tracks last non-zero box_size for injector snapping
+  let turbKAuto = true; // when true, ext_force k_min/k_max track box_size (4π/Lx, 6π/Lx)
 
   // ---- Init ----
   function init() {
     initState();
-    lastMeaningfulBoxsize = (state.grid_space?.boxsize || []).map(Number);
+    lastMeaningfulBoxsize = (state.grid_space?.box_size || []).map(Number);
     buildSidebar();
     buildSections();
     loadStateToUI();
@@ -125,11 +125,11 @@
     }
   }
 
-  function buildDefaults(sec) {
+  function buildDefaults(sec, dim = currentDim) {
     const data = {};
     if (sec.enabled === false) data._enabled = false;
     for (const f of sec.fields) {
-      const arrSize = getArraySize(f.dim, currentDim);
+      const arrSize = getArraySize(f.dim, dim);
       if (f.dim === 'VARIABLE') {
         data[f.key] = [...f.default];
       } else if (arrSize > 0) {
@@ -143,8 +143,19 @@
     return data;
   }
 
+  function markPresent(data, key, index) {
+    data._included = true;
+    if (!data._present) return;
+    if (!data._present.includes(key)) data._present.push(key);
+    if (index === undefined) delete data._indices[key];
+    else {
+      const indices = data._indices[key] ||= [];
+      if (!indices.includes(index)) indices.push(index);
+    }
+  }
+
   function getSpeciesCount() {
-    return state.particles?.num_species || 1;
+    return state.particles?.n_species || 1;
   }
 
   function ensureSpeciesArrays(count) {
@@ -417,7 +428,8 @@
         if (!field) continue;
         // Build-specific fields only render for the matching build target.
         if (field.build && field.build !== currentBuild) continue;
-        if (!fieldRequirementMet(field, state)) continue;
+        if (field.dim === 'BDIM' && currentDim === 1) continue;
+        if (!fieldRequirementMet(field, state, speciesIdx)) continue;
         html += buildFieldRow(skey, field, speciesIdx);
       }
       html += `</div>`;
@@ -444,43 +456,43 @@
         html += `</div>`;
         html += `<canvas id="e-field-canvas"></canvas><div id="e-field-plot-msg"></div></div>`;
       }
-      // Insert vsp velocity plot after the Velocity group in species section
+      // Insert u_drift_profile velocity plot after the Velocity group in species section
       if (skey === 'species' && group.title.startsWith('Velocity')) {
-        html += `<div id="vsp-plot">`;
-        html += `<div id="vsp-controls">`;
-        html += `<label>Field: <select id="vsp-component">`;
+        html += `<div id="u_drift_profile-plot">`;
+        html += `<div id="u_drift_profile-controls">`;
+        html += `<label>Field: <select id="u_drift_profile-component">`;
         html += `<option value="mag" selected>|v|</option>`;
         html += `<option value="vx">vx</option>`;
         html += `<option value="vy">vy</option>`;
         html += `<option value="vz">vz</option>`;
         html += `</select></label>`;
         html += ` <span class="plot-3d-controls"${currentDim === 3 ? '' : ' style="display:none"'}>`;
-        html += `<label>Slice: <select id="vsp-slice-axis">`;
+        html += `<label>Slice: <select id="u_drift_profile-slice-axis">`;
         html += `<option value="2" selected>z</option>`;
         html += `<option value="1">y</option>`;
         html += `<option value="0">x</option>`;
         html += `</select></label>`;
-        html += `<input type="range" id="vsp-slice-pos" min="0" max="1" step="0.005" value="0.5">`;
-        html += `<span id="vsp-slice-val"></span>`;
+        html += `<input type="range" id="u_drift_profile-slice-pos" min="0" max="1" step="0.005" value="0.5">`;
+        html += `<span id="u_drift_profile-slice-val"></span>`;
         html += `</span>`;
         html += `</div>`;
-        html += `<canvas id="vsp-canvas"></canvas><div id="vsp-plot-msg"></div></div>`;
+        html += `<canvas id="u_drift_profile-canvas"></canvas><div id="u_drift_profile-plot-msg"></div></div>`;
       }
-      // Insert nsp density heatmap after the Density group in species section
+      // Insert number_density density heatmap after the Density group in species section
       if (skey === 'species' && group.title === 'Density') {
-        html += `<div id="nsp-plot">`;
-        html += `<div id="nsp-controls" style="font-size:12px;color:var(--muted);">`;
+        html += `<div id="number_density-plot">`;
+        html += `<div id="number_density-controls" style="font-size:12px;color:var(--muted);">`;
         html += `<span class="plot-3d-controls"${currentDim === 3 ? '' : ' style="display:none"'}>`;
-        html += `<label>Slice: <select id="nsp-slice-axis">`;
+        html += `<label>Slice: <select id="number_density-slice-axis">`;
         html += `<option value="2" selected>z</option>`;
         html += `<option value="1">y</option>`;
         html += `<option value="0">x</option>`;
         html += `</select></label>`;
-        html += `<input type="range" id="nsp-slice-pos" min="0" max="1" step="0.005" value="0.5">`;
-        html += `<span id="nsp-slice-val"></span>`;
+        html += `<input type="range" id="number_density-slice-pos" min="0" max="1" step="0.005" value="0.5">`;
+        html += `<span id="number_density-slice-val"></span>`;
         html += `</span>`;
         html += `</div>`;
-        html += `<canvas id="nsp-canvas"></canvas><div id="nsp-plot-msg"></div></div>`;
+        html += `<canvas id="number_density-canvas"></canvas><div id="number_density-plot-msg"></div></div>`;
       }
       // Insert OU ramp curve plot after ext_force fields
       if (skey === 'ext_force') {
@@ -499,28 +511,28 @@
         html += `</div>`;
         html += `<canvas id="turb-force-canvas"></canvas><div id="turb-force-msg"></div></div>`;
       }
-      // Insert selectrule spatial plot after raw_diag fields
+      // Insert filter spatial plot after raw_diag fields
       if (skey === 'raw_diag') {
-        html += `<div id="selectrule-plot">`;
-        html += `<div id="selectrule-controls">`;
+        html += `<div id="filter-plot">`;
+        html += `<div id="filter-controls">`;
         html += `<span class="plot-3d-controls"${currentDim === 3 ? '' : ' style="display:none"'}>`;
-        html += `<label>Slice: <select id="selectrule-slice-axis">`;
+        html += `<label>Slice: <select id="filter-slice-axis">`;
         html += `<option value="2" selected>z</option>`;
         html += `<option value="1">y</option>`;
         html += `<option value="0">x</option>`;
         html += `</select></label>`;
-        html += `<input type="range" id="selectrule-slice-pos" min="0" max="1" step="0.005" value="0.5">`;
-        html += `<span id="selectrule-slice-val"></span>`;
+        html += `<input type="range" id="filter-slice-pos" min="0" max="1" step="0.005" value="0.5">`;
+        html += `<span id="filter-slice-val"></span>`;
         html += `</span>`;
         html += `</div>`;
-        html += `<canvas id="selectrule-canvas"></canvas><div id="selectrule-plot-msg"></div></div>`;
+        html += `<canvas id="filter-canvas"></canvas><div id="filter-plot-msg"></div></div>`;
       }
       // Insert node optimizer panel after node_conf fields
       if (skey === 'node_conf') {
         html += `<div id="node-optimizer-panel" class="node-optimizer-panel">`;
         html += `<div class="node-optimizer-header">Node Optimizer</div>`;
         html += `<p class="node-optimizer-desc">Finds MPI decompositions that balance subdomain sizes across processors. `;
-        html += `Enter the desired particles per processor — the optimizer estimates total particles from ncells, num_species, and num_par, `;
+        html += `Enter the desired particles per processor — the optimizer estimates total particles from n_cells, n_species, and ppc, `;
         html += `then searches for nearby processor counts with the most square (balanced) domain decomposition.</p>`;
         html += `<div class="node-optimizer-body">`;
         html += `<div class="node-optimizer-input-row">`;
@@ -611,8 +623,8 @@
 
     const fparserBtn = field.fparser
       ? ` <span class="fparser-help" tabindex="0" title="Function parser syntax&#10;&#10;Variables: x, y, z` +
-        (field.key === 'selectrule' ? `, vx, vy, vz (v)` : '') +
-        `&#10;Constants: ct(1), ct(2), ... from the supplied list; pi&#10;&#10;Functions:&#10;  abs, sin, cos, tan, htan (tanh)&#10;  hsec (sech), exp, log, tenlog (log10)&#10;  sqrt, asin, acos, atan, atan2&#10;  pow(a,b), not(a), neg(a)&#10;&#10;Operators: + - * / ^ **&#10;Logic: && || == != >= <= > <&#10;Conditional: if(cond, true, false)">?</span>`
+        (field.key === 'filter' ? `, vx, vy, vz (v)` : '') +
+        `&#10;Constants: constants(1), constants(2), ... from the supplied list; pi&#10;&#10;Functions:&#10;  abs, sin, cos, tan, htan (tanh)&#10;  hsec (sech), exp, log, tenlog (log10)&#10;  sqrt, asin, acos, atan, atan2&#10;  pow(a,b), not(a), neg(a)&#10;&#10;Operators: + - * / ^ **&#10;Logic: && || == != >= <= > <&#10;Conditional: if(cond, true, false)">?</span>`
       : '';
 
     return `<div class="field-row ${dimClass}${field.locked ? ' field-row-locked' : ''}">
@@ -791,8 +803,8 @@
       validateDiagSpecies(skey, spIdx);
     }
     if (skey === 'raw_diag') {
-      // Bind selectrule 3D slice controls
-      const srSliceAxisSel = container.querySelector('#selectrule-slice-axis');
+      // Bind filter 3D slice controls
+      const srSliceAxisSel = container.querySelector('#filter-slice-axis');
       if (srSliceAxisSel) {
         srSliceAxisSel.value = String(selectruleSliceAxis);
         srSliceAxisSel.addEventListener('change', () => {
@@ -800,7 +812,7 @@
           renderSelectrulePlot();
         });
       }
-      const srSlicePosRange = container.querySelector('#selectrule-slice-pos');
+      const srSlicePosRange = container.querySelector('#filter-slice-pos');
       if (srSlicePosRange) {
         srSlicePosRange.value = String(selectruleSlicePos);
         srSlicePosRange.addEventListener('input', () => {
@@ -811,8 +823,8 @@
       debouncedRenderSelectrulePlot();
     }
     if (skey === 'species') {
-      // Bind nsp 3D slice controls
-      const nspSliceAxisSel = container.querySelector('#nsp-slice-axis');
+      // Bind number_density 3D slice controls
+      const nspSliceAxisSel = container.querySelector('#number_density-slice-axis');
       if (nspSliceAxisSel) {
         nspSliceAxisSel.value = String(nspSliceAxis);
         nspSliceAxisSel.addEventListener('change', () => {
@@ -820,7 +832,7 @@
           renderNspPlot();
         });
       }
-      const nspSlicePosRange = container.querySelector('#nsp-slice-pos');
+      const nspSlicePosRange = container.querySelector('#number_density-slice-pos');
       if (nspSlicePosRange) {
         nspSlicePosRange.value = String(nspSlicePos);
         nspSlicePosRange.addEventListener('input', () => {
@@ -830,8 +842,8 @@
       }
       debouncedRenderNspPlot();
 
-      // Bind vsp velocity plot controls
-      const vspCompSel = container.querySelector('#vsp-component');
+      // Bind u_drift_profile velocity plot controls
+      const vspCompSel = container.querySelector('#u_drift_profile-component');
       if (vspCompSel) {
         vspCompSel.value = selectedVspComponent;
         vspCompSel.addEventListener('change', () => {
@@ -839,7 +851,7 @@
           renderVspPlot();
         });
       }
-      const vspSliceAxisSel = container.querySelector('#vsp-slice-axis');
+      const vspSliceAxisSel = container.querySelector('#u_drift_profile-slice-axis');
       if (vspSliceAxisSel) {
         vspSliceAxisSel.value = String(vspSliceAxis);
         vspSliceAxisSel.addEventListener('change', () => {
@@ -847,7 +859,7 @@
           renderVspPlot();
         });
       }
-      const vspSlicePosRange = container.querySelector('#vsp-slice-pos');
+      const vspSlicePosRange = container.querySelector('#u_drift_profile-slice-pos');
       if (vspSlicePosRange) {
         vspSlicePosRange.value = String(vspSlicePos);
         vspSlicePosRange.addEventListener('input', () => {
@@ -887,18 +899,21 @@
         const newInj = buildDefaults(SCHEMA[skey]);
         // Inherit _enabled from existing injectors
         if (injectors.length > 0 && injectors[0]._enabled) newInj._enabled = true;
-        // Snap to right x edge with full boundary span, inherit species vth
+        // Snap to right x edge with full transverse_bounds span, inherit species u_th
         if (skey === 'plasma_injector') {
-          const boxsize = (state.grid_space?.boxsize || []).map(Number);
+          const box_size = (state.grid_space?.box_size || []).map(Number);
           newInj.plane = 'yz';
-          newInj.planepos = boxsize[0] || 0;
+          newInj.plane_position = box_size[0] || 0;
           const nInPlane = currentDim - 1;
           const bd = new Array(nInPlane * 2).fill(0);
-          if (nInPlane >= 1) bd[nInPlane] = boxsize[1] || 0;
-          if (nInPlane >= 2) bd[nInPlane + 1] = boxsize[2] || 0;
-          newInj.boundary = bd;
+          if (nInPlane >= 1) bd[nInPlane] = box_size[1] || 0;
+          if (nInPlane >= 2) bd[nInPlane + 1] = box_size[2] || 0;
+          newInj.transverse_bounds = bd;
           const spData = state.species?.[spIdx];
-          if (spData) newInj.vth = spData.vth ?? newInj.vth;
+          if (spData) {
+            const scale = INPUT_NAMES.thermal[String(spData.distribution || 'thermal').toLowerCase()];
+            newInj[scale] = spData[scale] ?? newInj[scale];
+          }
         }
         injectors.push(newInj);
         activeInjectorIdx[spIdx] = injectors.length - 1;
@@ -959,19 +974,21 @@
     cb.dataset.species = String(spIdx);
 
     cb.addEventListener('change', () => {
-      const boxsize = (state.grid_space?.boxsize || []).map(Number);
+      const box_size = (state.grid_space?.box_size || []).map(Number);
       const spArr = state[skey]?.[spIdx];
+      if (cb.checked && Array.isArray(spArr) && !spArr.length) spArr.push(buildDefaults(sec));
       if (Array.isArray(spArr)) {
         for (const inj of spArr) {
           inj._enabled = cb.checked;
+          inj._included = cb.checked;
           if (cb.checked && skey === 'plasma_injector') {
             inj.plane = inj.plane || 'yz';
-            inj.planepos = boxsize[0] || 0;
+            inj.plane_position = box_size[0] || 0;
             const nInPlane = currentDim - 1;
             const bd = new Array(nInPlane * 2).fill(0);
-            if (nInPlane >= 1) bd[nInPlane] = boxsize[1] || 0;
-            if (nInPlane >= 2) bd[nInPlane + 1] = boxsize[2] || 0;
-            inj.boundary = bd;
+            if (nInPlane >= 1) bd[nInPlane] = box_size[1] || 0;
+            if (nInPlane >= 2) bd[nInPlane + 1] = box_size[2] || 0;
+            inj.transverse_bounds = bd;
           }
         }
       }
@@ -1020,25 +1037,33 @@
           target = state[elSection] = state[elSection] || {};
         }
 
+        target._included = true;
+        if (target._present && elKey !== '_enabled' && !target._present.includes(elKey)) target._present.push(elKey);
+        if (arrIdx !== undefined && target._indices) {
+          const size = getArraySize(field.dim, currentDim);
+          const index = field.layout === 'minmax' ? (arrIdx % 2 ? size / 2 + Math.floor(arrIdx / 2) + 1 : Math.floor(arrIdx / 2) + 1) : arrIdx + 1;
+          const indices = target._indices[elKey] ||= [];
+          if (!indices.includes(index)) indices.push(index);
+        }
         if (elKey === '_enabled') {
           if (sec.multiPerSpecies) {
             // Set _enabled on all injectors for the toggled species only
-            const boxsize = (state.grid_space?.boxsize || []).map(Number);
+            const box_size = (state.grid_space?.box_size || []).map(Number);
             const targetSpIdx = spIdx !== undefined ? spIdx : activeSpeciesIdx[elSection] || 0;
             const spArr = state[elSection]?.[targetSpIdx];
             if (Array.isArray(spArr)) {
               for (const inj of spArr) {
                 inj._enabled = el.checked;
                 if (el.checked && elSection === 'plasma_injector') {
-                  // Default: yz plane at right x edge, boundary spans full box
+                  // Default: yz plane at right x edge, transverse_bounds spans full box
                   inj.plane = inj.plane || 'yz';
-                  inj.planepos = boxsize[0] || 0;
+                  inj.plane_position = box_size[0] || 0;
                   const nInPlane = currentDim - 1;
                   const bd = new Array(nInPlane * 2).fill(0);
                   // ends are at indices [nInPlane .. 2*nInPlane-1]
-                  if (nInPlane >= 1) bd[nInPlane] = boxsize[1] || 0;     // end_y
-                  if (nInPlane >= 2) bd[nInPlane + 1] = boxsize[2] || 0; // end_z
-                  inj.boundary = bd;
+                  if (nInPlane >= 1) bd[nInPlane] = box_size[1] || 0;     // end_y
+                  if (nInPlane >= 2) bd[nInPlane + 1] = box_size[2] || 0; // end_z
+                  inj.transverse_bounds = bd;
                 }
               }
             }
@@ -1060,6 +1085,7 @@
 
         // Phase checkbox handling (also fires for a per-field type select change).
         if (field && field.phaseCheckboxes && (el.dataset.phase || el.dataset.phaseType)) {
+          if (target._indices) delete target._indices[elKey];
           const base = speciesIdx !== undefined
             ? `[data-section="${skey}"][data-key="${field.key}"][data-species="${spIdx}"]`
             : `[data-section="${skey}"][data-key="${field.key}"]`;
@@ -1089,6 +1115,7 @@
         }
 
         if (field.dim === 'VARIABLE') {
+          if (target._indices) delete target._indices[elKey];
           target[elKey] = el.value.trim() ? el.value.split(',').map(v => v.trim()) : [];
         } else if (arrIdx !== undefined) {
           if (!Array.isArray(target[elKey])) target[elKey] = [];
@@ -1113,10 +1140,10 @@
           }
         }
 
-        // Special: num_species changed
-        if (elKey === 'num_species') {
+        // Special: n_species changed
+        if (elKey === 'n_species') {
           const count = Math.max(1, parseInt(el.value) || 1);
-          state.particles.num_species = count;
+          state.particles.n_species = count;
           ensureSpeciesArrays(count);
           // Rebuild species tabs for all per-species sections
           for (const [k, s] of Object.entries(SCHEMA)) {
@@ -1141,15 +1168,15 @@
 
         updatePreview();
 
-        // Cross-section: if ncells changed, cap xres to ncells for all species
-        if (elSection === 'grid_space' && elKey === 'ncells') {
+        // Cross-section: if n_cells changed, cap x_bins to n_cells for all species
+        if (elSection === 'grid_space' && elKey === 'n_cells') {
           autoCapXres();
         }
 
-        // Cross-section: if ncells or any time/dump control changed, update diag estimates
-        if ((elSection === 'grid_space' && elKey === 'ncells') ||
-            (elSection === 'time' && (elKey === 'niter' || elKey === 'tend' || elKey === 'dt')) ||
-            (elSection === 'global_output' && (elKey === 'ndump' || elKey === 'tdump'))) {
+        // Cross-section: if n_cells or any time/dump control changed, update diag estimates
+        if ((elSection === 'grid_space' && elKey === 'n_cells') ||
+            (elSection === 'time' && (elKey === 'n_steps' || elKey === 't_end' || elKey === 'dt')) ||
+            (elSection === 'global_output' && (elKey === 'dump_every' || elKey === 'dump_dt'))) {
           if (activeSection === 'diag_species') {
             const diagSpIdx = activeSpeciesIdx['diag_species'] || 0;
             validateDiagSpecies('diag_species', diagSpIdx);
@@ -1159,28 +1186,28 @@
           }
         }
 
-        // Cross-section: if boxsize, ncells, or c changed, update dt recommendation and auto-set dt
-        if ((elSection === 'grid_space' && (elKey === 'boxsize' || elKey === 'ncells')) ||
+        // Cross-section: if box_size, n_cells, or c changed, update dt recommendation and auto-set dt
+        if ((elSection === 'grid_space' && (elKey === 'box_size' || elKey === 'n_cells')) ||
             (elSection === 'time' && elKey === 'c')) {
           updateDtRecommendation();
           autoUpdateDt();
         }
 
-        // ext_force kmin/kmax: user-edit disables auto-tracking with boxsize
-        if (elSection === 'ext_force' && (elKey === 'kmin' || elKey === 'kmax')) {
+        // ext_force k_min/k_max: user-edit disables auto-tracking with box_size
+        if (elSection === 'ext_force' && (elKey === 'k_min' || elKey === 'k_max')) {
           turbKAuto = false;
         }
 
-        // Cross-section: if boxsize changed and TURB k-shell is auto-tracking, retune
-        if (elSection === 'grid_space' && elKey === 'boxsize' && turbKAuto) {
+        // Cross-section: if box_size changed and TURB k-shell is auto-tracking, retune
+        if (elSection === 'grid_space' && elKey === 'box_size' && turbKAuto) {
           autoUpdateTurbK();
         }
 
-        // Cross-section: if boxsize changed, move injectors that sit at the old edge
-        if (elSection === 'grid_space' && elKey === 'boxsize') {
+        // Cross-section: if box_size changed, move injectors that sit at the old edge
+        if (elSection === 'grid_space' && elKey === 'box_size') {
           syncInjectorsToBoxsize(lastMeaningfulBoxsize);
           // Update lastMeaningfulBoxsize: only overwrite components that are > 0
-          const newBs = (state.grid_space?.boxsize || []).map(Number);
+          const newBs = (state.grid_space?.box_size || []).map(Number);
           for (let i = 0; i < newBs.length; i++) {
             if (newBs[i] > 0) lastMeaningfulBoxsize[i] = newBs[i];
           }
@@ -1194,61 +1221,66 @@
         // Cross-section: if ext_emf fields changed, update |B| and |E| magnitude and plots
         if (elSection === 'ext_emf') {
           if (elKey === 'Bx' || elKey === 'By' || elKey === 'Bz') updateBMagnitude();
-          if (elKey === 'Bx' || elKey === 'By' || elKey === 'Bz' || elKey === 'ct') debouncedRenderBFieldPlot();
+          if (elKey === 'Bx' || elKey === 'By' || elKey === 'Bz' || elKey === 'constants') debouncedRenderBFieldPlot();
           if (elKey === 'Ex' || elKey === 'Ey' || elKey === 'Ez') updateEMagnitude();
-          if (elKey === 'Ex' || elKey === 'Ey' || elKey === 'Ez' || elKey === 'ct') debouncedRenderEFieldPlot();
+          if (elKey === 'Ex' || elKey === 'Ey' || elKey === 'Ez' || elKey === 'constants') debouncedRenderEFieldPlot();
         }
 
-        // Species: if nsp, nsp_domain, domain_boundary, or ct changed, update density plot
-        if (elSection === 'species' && (elKey === 'nsp' || elKey === 'nsp_domain' || elKey === 'domain_boundary' || elKey === 'ct')) {
+        // Species: if number_density, mask, initial_bounds, or constants changed, update density plot
+        if (elSection === 'species' && (elKey === 'number_density' || elKey === 'mask' || elKey === 'initial_bounds' || elKey === 'constants')) {
           debouncedRenderNspPlot();
         }
 
-        // Species: if vsp, vdrift, or ct changed, update velocity plot
-        if (elSection === 'species' && (elKey === 'vsp' || elKey === 'vdrift' || elKey === 'ct')) {
+        // Species: if u_drift_profile, u_drift, or constants changed, update velocity plot
+        if (elSection === 'species' && (elKey === 'u_drift_profile' || elKey === 'u_drift' || elKey === 'constants')) {
           debouncedRenderVspPlot();
         }
 
-        // Raw diag: if selectrule or ct changed, update selectrule plot
-        if (elSection === 'raw_diag' && (elKey === 'selectrule' || elKey === 'ct')) {
+        // Raw diag: if filter or constants changed, update filter plot
+        if (elSection === 'raw_diag' && (elKey === 'filter' || elKey === 'constants')) {
           debouncedRenderSelectrulePlot();
         }
 
-        // ext_force OR time: update OU ramp curve (x-range depends on niter/dt/tend)
+        // ext_force OR time: update OU ramp curve (x-range depends on n_steps/dt/t_end)
         if (elSection === 'ext_force' ||
-            (elSection === 'time' && (elKey === 'niter' || elKey === 'tend' || elKey === 'dt'))) {
+            (elSection === 'time' && (elKey === 'n_steps' || elKey === 't_end' || elKey === 'dt'))) {
           debouncedRenderTurbRampPlot();
         }
 
         // ext_force or grid_space: update the 2D driving force heatmap
         if (elSection === 'ext_force' ||
-            (elSection === 'grid_space' && (elKey === 'boxsize' || elKey === 'ncells'))) {
+            (elSection === 'grid_space' && (elKey === 'box_size' || elKey === 'n_cells'))) {
           debouncedRenderTurbForcePlot();
         }
 
-        // Cross-section: if ncells, num_species, or num_par changed, update node optimizer
-        if ((elSection === 'grid_space' && elKey === 'ncells') ||
-            (elSection === 'particles' && elKey === 'num_species') ||
-            (elSection === 'species' && elKey === 'num_par')) {
+        // Cross-section: if n_cells, n_species, or ppc changed, update node optimizer
+        if ((elSection === 'grid_space' && elKey === 'n_cells') ||
+            (elSection === 'particles' && elKey === 'n_species') ||
+            (elSection === 'species' && elKey === 'ppc')) {
           renderNodeOptimizer();
         }
 
         // The closure decides which fluid_electrons and field_diag fields exist.
-        if (elSection === 'fluid_electrons' && elKey === 'closure') {
+        if ((elSection === 'fluid_electrons' && elKey === 'closure') || (elSection === 'species' && elKey === 'distribution')) {
+          const parameter = elSection === 'fluid_electrons'
+            ? (String(target.closure).toLowerCase() === 'polytropic' ? 'Ke' : 'Te')
+            : INPUT_NAMES.thermal[String(target.distribution).toLowerCase()];
+          if (parameter) markPresent(target, parameter);
           buildSections();
           loadStateToUI();
           setActiveSection(activeSection);
+          updatePreview();
         }
 
         // Section validations
         if (elSection === 'grid_space') validateSection('grid_space');
         if (elSection === 'time') {
           validateSection('time');
-          validateSection('global_output'); // ndump vs niter
+          validateSection('global_output'); // dump_every vs n_steps
         }
         if (elSection === 'global_output') {
           validateSection('global_output');
-          validateSection('raw_diag'); // raw_ndump vs ndump
+          validateSection('raw_diag'); // dump_every vs dump_every
         }
         if (elSection === 'raw_diag') validateSection('raw_diag');
         if (elSection === 'particles') validateSection('particles');
@@ -1355,7 +1387,7 @@
           if (field.type === 'bool') {
             el.checked = !!val[i];
           } else {
-            el.value = val[i] ?? '';
+            el.value = field.options?.find(option => option.toLowerCase() === String(val[i]).toLowerCase()) ?? val[i] ?? '';
           }
         }
       } else if (field.phaseCheckboxes) {
@@ -1389,7 +1421,7 @@
           if (field.type === 'bool') {
             el.checked = !!val;
           } else {
-            el.value = val ?? '';
+            el.value = field.options?.find(option => option.toLowerCase() === String(val).toLowerCase()) ?? val ?? '';
           }
         });
       }
@@ -1435,7 +1467,7 @@
   function onBuildChange(value) {
     currentBuild = value;
     // Build target only changes which build-specific fields are shown/emitted
-    // (gpu_mem_frac vs spare_size); no array resizing needed. Rebuild the DOM so
+    // (gpu_memory_fraction vs buffer_headroom); no array resizing needed. Rebuild the DOM so
     // those fields appear/disappear, then repaint.
     buildSections();
     loadStateToUI();
@@ -1615,14 +1647,17 @@
       const newSize = getArraySize(field.dim, currentDim);
       const maxSize = getMaxArraySize(field.dim);
       if (newSize > 0 && Array.isArray(data[field.key])) {
-        // Ensure array is at least newSize
-        while (data[field.key].length < newSize) {
-          const defVal = field.default?.[data[field.key].length] ?? (field.type === 'strarr' ? 'per' : 0);
-          data[field.key].push(defVal);
+        if (data._indices && ['DIM', 'DIM2', 'BDIM'].includes(field.dim)) delete data._indices[field.key];
+        // A dimension edit materializes every displayed array entry.
+        for (let i = 0; i < newSize; i++) {
+          if (data[field.key][i] === undefined || data[field.key][i] === null) {
+            data[field.key][i] = field.default?.[i] ?? (field.type === 'strarr' ? 'per' : 0);
+          }
         }
       }
       // Filter out dim-incompatible phase space selections
       if (field.phaseCheckboxes && typeof data[field.key] === 'string') {
+        if (data._indices) delete data._indices[field.key];
         const selected = data[field.key].split(',').map(s => s.trim()).filter(s => s);
         const filtered = selected.filter(name => {
           const opt = field.phaseOptions.find(o => o.name === name);
@@ -1633,15 +1668,15 @@
     }
   }
 
-  // ---- Sync injector planepos/boundary when boxsize changes ----
+  // ---- Sync injector plane_position/transverse_bounds when box_size changes ----
   function syncInjectorsToBoxsize(oldBoxsize) {
-    const newBoxsize = (state.grid_space?.boxsize || []).map(Number);
+    const newBoxsize = (state.grid_space?.box_size || []).map(Number);
     const injectors = state.plasma_injector;
     if (!injectors || !Array.isArray(injectors)) return;
 
     const eps = 1e-6;
     const planeAxisIdx = { yz: 0, xz: 1, xy: 2 };
-    // For boundary: in-plane axes per plane type
+    // For transverse_bounds: in-plane axes per plane type
     const inPlaneAxes = {
       yz: [1, 2],  // y, z
       xz: [0, 2],  // x, z
@@ -1655,21 +1690,22 @@
         if (!inj) continue;
         const plane = (inj.plane || 'yz').toLowerCase();
 
-        // Sync planepos if it was at the old boxsize edge (skip if old edge was 0 — transient from empty input)
+        // Sync plane_position if it was at the old box_size edge (skip if old edge was 0 — transient from empty input)
         const axIdx = planeAxisIdx[plane];
         if (axIdx !== undefined && axIdx < oldBoxsize.length) {
           const oldMax = oldBoxsize[axIdx];
-          const pp = Number(inj.planepos) || 0;
+          const pp = Number(inj.plane_position) || 0;
           const newPlaneMax = newBoxsize[axIdx] || 0;
           if (oldMax > eps && newPlaneMax > 0 && Math.abs(pp - oldMax) < eps * Math.max(1, Math.abs(oldMax))) {
-            inj.planepos = newPlaneMax;
+            inj.plane_position = newPlaneMax;
+            markPresent(inj, 'plane_position');
             changed = true;
           }
         }
 
-        // Sync boundary ends if they were at the old boxsize edge
+        // Sync transverse_bounds ends if they were at the old box_size edge
         const axes = (inPlaneAxes[plane] || []).filter(ai => ai < currentDim);
-        const bd = inj.boundary;
+        const bd = inj.transverse_bounds;
         if (Array.isArray(bd)) {
           const nInPlane = axes.length;
           for (let i = 0; i < nInPlane; i++) {
@@ -1701,20 +1737,20 @@
     }
   }
 
-  // ---- Auto-cap xres to ncells when ncells changes ----
+  // ---- Auto-cap x_bins to n_cells when n_cells changes ----
   function autoCapXres() {
-    const ncells = state.grid_space?.ncells || [];
+    const n_cells = state.grid_space?.n_cells || [];
     const diagArr = state.diag_species;
     if (!Array.isArray(diagArr)) return;
 
     let changed = false;
     for (const diag of diagArr) {
-      if (!diag || !Array.isArray(diag.xres)) continue;
+      if (!diag || !Array.isArray(diag.x_bins) || (diag._present && !diag._present.includes('x_bins'))) continue;
       for (let i = 0; i < currentDim; i++) {
-        const nc = parseInt(ncells[i]) || 0;
-        const xr = parseInt(diag.xres[i]) || 0;
+        const nc = parseInt(n_cells[i]) || 0;
+        const xr = parseInt(diag.x_bins[i]) || 0;
         if (nc > 0 && xr > nc) {
-          diag.xres[i] = nc;
+          diag.x_bins[i] = nc;
           changed = true;
         }
       }
@@ -1731,15 +1767,15 @@
 
   // ---- Auto-update dt using CFL: dt = 0.5 / (c * sqrt(sum(1/dx_i^2))) ----
   function autoUpdateDt() {
-    const ncells = state.grid_space?.ncells || [];
-    const boxsize = state.grid_space?.boxsize || [];
+    const n_cells = state.grid_space?.n_cells || [];
+    const box_size = state.grid_space?.box_size || [];
     const c = parseFloat(state.time?.c) || 100;
     if (c <= 0) return;
 
     let sumInvDx2 = 0;
     for (let i = 0; i < currentDim; i++) {
-      const L = parseFloat(boxsize[i]) || 1;
-      const N = parseInt(ncells[i]) || 1;
+      const L = parseFloat(box_size[i]) || 1;
+      const N = parseInt(n_cells[i]) || 1;
       const dx = L / N;
       sumInvDx2 += 1 / (dx * dx);
     }
@@ -1748,6 +1784,7 @@
     const dt = 0.5 / (c * Math.sqrt(sumInvDx2));
     const dtStr = dt.toPrecision(4);
     state.time.dt = parseFloat(dtStr);
+    markPresent(state.time, 'dt');
 
     const dtInput = document.querySelector('[data-section="time"][data-key="dt"]');
     if (dtInput) {
@@ -1758,16 +1795,16 @@
 
   function autoUpdateTurbK() {
     if (!state.ext_force) return;
-    const Lx = parseFloat(state.grid_space?.boxsize?.[0]);
+    const Lx = parseFloat(state.grid_space?.box_size?.[0]);
     if (!isFinite(Lx) || Lx <= 0) return;
-    const kmin = 4 * Math.PI / Lx;
-    const kmax = 6 * Math.PI / Lx;
-    state.ext_force.kmin = kmin;
-    state.ext_force.kmax = kmax;
-    const kminInp = document.querySelector('[data-section="ext_force"][data-key="kmin"]');
-    const kmaxInp = document.querySelector('[data-section="ext_force"][data-key="kmax"]');
-    if (kminInp) kminInp.value = kmin.toPrecision(6);
-    if (kmaxInp) kmaxInp.value = kmax.toPrecision(6);
+    const k_min = 4 * Math.PI / Lx;
+    const k_max = 6 * Math.PI / Lx;
+    state.ext_force.k_min = k_min;
+    state.ext_force.k_max = k_max;
+    const kminInp = document.querySelector('[data-section="ext_force"][data-key="k_min"]');
+    const kmaxInp = document.querySelector('[data-section="ext_force"][data-key="k_max"]');
+    if (kminInp) kminInp.value = k_min.toPrecision(6);
+    if (kmaxInp) kmaxInp.value = k_max.toPrecision(6);
   }
 
   // ---- dt recommendation ----
@@ -1776,8 +1813,8 @@
     if (!container) return;
 
     const safetyFactor = 0.5;
-    const ncells = state.grid_space?.ncells || [];
-    const boxsize = state.grid_space?.boxsize || [];
+    const n_cells = state.grid_space?.n_cells || [];
+    const box_size = state.grid_space?.box_size || [];
     const c = parseFloat(state.time?.c) || 100;
     if (c <= 0) { container.innerHTML = ''; return; }
 
@@ -1785,8 +1822,8 @@
     const dxVals = [];
     const dimNames = ['x', 'y', 'z'];
     for (let i = 0; i < currentDim; i++) {
-      const L = parseFloat(boxsize[i]) || 1;
-      const N = parseInt(ncells[i]) || 1;
+      const L = parseFloat(box_size[i]) || 1;
+      const N = parseInt(n_cells[i]) || 1;
       const dx = L / N;
       dxVals.push(dx);
       sumInvDx2 += 1 / (dx * dx);
@@ -1885,15 +1922,15 @@
     let s = expr.trim();
     // Replace Fortran d/D scientific notation: 1.0d-3 -> 1.0e-3
     s = s.replace(/(\d)([dD])([+-]?\d)/g, '$1e$3');
-    // Replace ct(N) with actual values from state (1-indexed -> 0-indexed)
-    const ctVals = ctValsOverride || state.ext_emf?.ct || [];
+    // Replace constants(N) with actual values from state (1-indexed -> 0-indexed)
+    const ctVals = ctValsOverride || state.ext_emf?.constants || [];
     let values;
     try { values = parseConstantValues(ctVals.join(',')); }
-    catch { return 'ct'; }
-    s = s.replace(/\bct\s*\(\s*(\d+)\s*\)/gi, (_, n) => {
+    catch { return 'constants'; }
+    s = s.replace(/\bconstants\s*\(\s*(\d+)\s*\)/gi, (_, n) => {
       const idx = parseInt(n) - 1;
       // Leave missing constants unresolved so the plot reports an evaluation error.
-      return values[idx] === undefined ? `ct(${n})` : '(' + values[idx] + ')';
+      return values[idx] === undefined ? `constants(${n})` : '(' + values[idx] + ')';
     });
     // Replace if(cond, true, false) → JS ternary ((cond) > 0 ? (true) : (false))
     // Handle nested if() by replacing innermost first, repeatedly
@@ -2012,8 +2049,8 @@
       const c3d = container.querySelector('.plot-3d-controls');
       if (c3d) c3d.style.display = 'none';
 
-      const boxsize = state.grid_space?.boxsize || [];
-      const Lx = parseFloat(boxsize[0]) || 1;
+      const box_size = state.grid_space?.box_size || [];
+      const Lx = parseFloat(box_size[0]) || 1;
 
       const bxExpr = translateExpr(state.ext_emf?.Bx || '0.');
       const byExpr = translateExpr(state.ext_emf?.By || '0.');
@@ -2136,10 +2173,10 @@
     const controls3d = container.querySelector('.plot-3d-controls');
     if (controls3d) controls3d.style.display = currentDim === 3 ? '' : 'none';
 
-    const boxsize = state.grid_space?.boxsize || [];
-    const Lx = parseFloat(boxsize[0]) || 1;
-    const Ly = parseFloat(boxsize[1]) || 1;
-    const Lz = parseFloat(boxsize[2]) || 1;
+    const box_size = state.grid_space?.box_size || [];
+    const Lx = parseFloat(box_size[0]) || 1;
+    const Ly = parseFloat(box_size[1]) || 1;
+    const Lz = parseFloat(box_size[2]) || 1;
     const axisNames = ['x', 'y', 'z'];
 
     const bxExpr = translateExpr(state.ext_emf?.Bx || '0.');
@@ -2306,8 +2343,8 @@
   }
 
   // ---- TURB Langevin antenna OU ramp curve ----
-  // Plots the per-mode RMS amplitude ramp:
-  //   RMS(F_k)(t) / amplitude = sqrt(1 - exp(-2 t / t_decay))
+  // Plots the per-mode RMS mode_amp ramp:
+  //   RMS(F_k)(t) / mode_amp = sqrt(1 - exp(-2 t / t_decay))
   // (stationary-variance ramp of the Ornstein-Uhlenbeck process driving each k-mode).
   function renderTurbRampPlot() {
     const container = document.getElementById('turb-ramp-plot');
@@ -2317,18 +2354,18 @@
     if (!canvas || !msgEl) return;
 
     const ext = state.ext_force || {};
-    const ftype = (ext.ftype || '').trim();
+    const drive_type = (ext.drive_type || '').trim();
 
     // Hide entirely unless TURB
-    if (ftype !== 'TURB') {
+    if (drive_type !== 'TURB') {
       container.style.display = 'none';
       return;
     }
     container.style.display = '';
 
     const tDecay = parseFloat(ext.t_decay);
-    const amplitude = parseFloat(ext.amplitude);
-    const frequency = parseFloat(ext.frequency);
+    const mode_amp = parseFloat(ext.mode_amp);
+    const omega = parseFloat(ext.omega);
 
     if (!isFinite(tDecay) || tDecay <= 0) {
       canvas.width = 0;
@@ -2340,17 +2377,17 @@
 
     // Determine x-range (simulation end time)
     const dt = parseFloat(state.time?.dt);
-    const niter = parseFloat(state.time?.niter);
-    const tend = parseFloat(state.time?.tend);
+    const n_steps = parseFloat(state.time?.n_steps);
+    const t_end = parseFloat(state.time?.t_end);
 
     let tEnd;
     let tEndSource = '';
-    if (isFinite(niter) && niter > 0 && isFinite(dt) && dt > 0) {
-      tEnd = niter * dt;
-      tEndSource = 'niter*dt';
-    } else if (isFinite(tend) && tend > 0) {
-      tEnd = tend;
-      tEndSource = 'tend';
+    if (isFinite(n_steps) && n_steps > 0 && isFinite(dt) && dt > 0) {
+      tEnd = n_steps * dt;
+      tEndSource = 'n_steps*dt';
+    } else if (isFinite(t_end) && t_end > 0) {
+      tEnd = t_end;
+      tEndSource = 't_end';
     } else {
       tEnd = 5 * tDecay;
       tEndSource = '5*t_decay (default)';
@@ -2466,13 +2503,13 @@
     ctx.textAlign = 'center';
     ctx.fillText('t', marginLeft + plotW / 2, canvasH - 2);
 
-    // Y axis ticks (0, 1) — left side normalized, right side absolute amplitude
+    // Y axis ticks (0, 1) — left side normalized, right side absolute mode_amp
     ctx.textAlign = 'right';
     ctx.fillText('0', marginLeft - 4, marginTop + plotH);
     ctx.fillText('1', marginLeft - 4, marginTop + 10);
-    if (isFinite(amplitude) && amplitude !== 0) {
+    if (isFinite(mode_amp) && mode_amp !== 0) {
       ctx.textAlign = 'left';
-      ctx.fillText(fmtNum(amplitude), marginLeft + plotW + 4, marginTop + 10);
+      ctx.fillText(fmtNum(mode_amp), marginLeft + plotW + 4, marginTop + 10);
       ctx.fillText('0', marginLeft + plotW + 4, marginTop + plotH);
     }
 
@@ -2481,7 +2518,7 @@
     ctx.translate(12, marginTop + plotH / 2);
     ctx.rotate(-Math.PI / 2);
     ctx.textAlign = 'center';
-    ctx.fillText('RMS / amplitude', 0, 0);
+    ctx.fillText('RMS / mode_amp', 0, 0);
     ctx.restore();
 
     // Status text below plot
@@ -2496,9 +2533,9 @@
       lines.push('Driver spun-up in first ~3*t_decay = ' + fmtNum(3 * tDecay) + ' time units');
     }
     lines.push('x-range from ' + tEndSource + ' = ' + fmtNum(tEnd));
-    if (isFinite(frequency) && frequency > 0) {
-      const period = 2 * Math.PI / frequency;
-      lines.push('Modes oscillate at omega = ' + fmtNum(frequency) +
+    if (isFinite(omega) && omega > 0) {
+      const period = 2 * Math.PI / omega;
+      lines.push('Modes oscillate at omega = ' + fmtNum(omega) +
         ' (period = ' + fmtNum(period) + '); envelope shape unchanged.');
     }
 
@@ -2540,7 +2577,7 @@
     return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
   }
   // Cheap deterministic 32-bit hash from numeric inputs
-  function hashSeed(salt, kmin, kmax, nModes, dim) {
+  function hashSeed(salt, k_min, k_max, nModes, dim) {
     let h = 0x9E3779B1 ^ ((salt | 0) * 0x85EBCA77);
     const mix = (x) => {
       // Convert any finite number into 32 bits via float32 view
@@ -2550,7 +2587,7 @@
       h = Math.imul(h ^ w, 0x27D4EB2D) >>> 0;
       h = (h ^ (h >>> 15)) >>> 0;
     };
-    mix(kmin); mix(kmax); mix(nModes); mix(dim);
+    mix(k_min); mix(k_max); mix(nModes); mix(dim);
     return h >>> 0;
   }
 
@@ -2562,9 +2599,9 @@
     if (!canvas || !msgEl) return;
 
     const ext = state.ext_force || {};
-    const ftype = (ext.ftype || '').trim();
+    const drive_type = (ext.drive_type || '').trim();
 
-    if (ftype !== 'TURB') {
+    if (drive_type !== 'TURB') {
       container.style.display = 'none';
       return;
     }
@@ -2579,29 +2616,29 @@
       return;
     }
 
-    const boxsize = state.grid_space?.boxsize || [];
-    const Lx = parseFloat(boxsize[0]);
-    const Ly = parseFloat(boxsize[1]);
+    const box_size = state.grid_space?.box_size || [];
+    const Lx = parseFloat(box_size[0]);
+    const Ly = parseFloat(box_size[1]);
     if (!isFinite(Lx) || Lx <= 0 || !isFinite(Ly) || Ly <= 0) {
       canvas.width = 0;
       canvas.height = 0;
       msgEl.style.display = '';
-      msgEl.textContent = 'Set grid_space.boxsize (Lx, Ly) > 0 to see force preview';
+      msgEl.textContent = 'Set grid_space.box_size (Lx, Ly) > 0 to see force preview';
       return;
     }
 
-    const kmin = parseFloat(ext.kmin);
-    const kmax = parseFloat(ext.kmax);
-    const amplitude = parseFloat(ext.amplitude);
-    if (!isFinite(kmin) || !isFinite(kmax) || kmin < 0 || kmax <= 0 || kmax < kmin) {
+    const k_min = parseFloat(ext.k_min);
+    const k_max = parseFloat(ext.k_max);
+    const mode_amp = parseFloat(ext.mode_amp);
+    if (!isFinite(k_min) || !isFinite(k_max) || k_min < 0 || k_max <= 0 || k_max < k_min) {
       canvas.width = 0;
       canvas.height = 0;
       msgEl.style.display = '';
-      msgEl.textContent = 'Set ext_force.kmin and kmax (0 ≤ kmin ≤ kmax) to see force preview';
+      msgEl.textContent = 'Set ext_force.k_min and k_max (0 ≤ k_min ≤ k_max) to see force preview';
       return;
     }
 
-    const ncellsArr = state.grid_space?.ncells || [];
+    const ncellsArr = state.grid_space?.n_cells || [];
     const ncells_x = parseInt(ncellsArr[0]) || 0;
     const ncells_y = parseInt(ncellsArr[1]) || 0;
 
@@ -2609,8 +2646,8 @@
     // the kz=0 slice (modes summed at z=0 with iz=0 only) as an honest 2D view.
     const dkx = (2 * Math.PI) / Lx;
     const dky = (2 * Math.PI) / Ly;
-    const nmax_x = Math.ceil(kmax / dkx);
-    const nmax_y = Math.ceil(kmax / dky);
+    const nmax_x = Math.ceil(k_max / dkx);
+    const nmax_y = Math.ceil(k_max / dky);
 
     // For 3D we still iterate iz, but restrict to iz=0 so the rendered 2D
     // plane (z=0) is a faithful slice of one OU draw of the 3D field.
@@ -2623,7 +2660,7 @@
         const kx = ix * dkx;
         const ky = iy * dky;
         const kmag = Math.sqrt(kx * kx + ky * ky);
-        if (kmag < kmin || kmag > kmax) continue;
+        if (kmag < k_min || kmag > k_max) continue;
         const inHalf = (ix > 0) || (ix === 0 && iy > 0);
         if (!inHalf) continue;
         modes.push({ kx, ky, kmag2: kx * kx + ky * ky });
@@ -2636,16 +2673,16 @@
       canvas.width = 0;
       canvas.height = 0;
       msgEl.style.display = '';
-      msgEl.textContent = 'Shell contains no discrete k-modes — widen kmin..kmax or increase boxsize';
+      msgEl.textContent = 'Shell contains no discrete k-modes — widen k_min..k_max or increase box_size';
       return;
     }
 
-    // Stationary OU magnitude is the input `amplitude` (per real-and-imag
-    // pair, scaled by 1/sqrt(2) so that <|amp|^2> = amplitude^2 per component).
-    const ampScale = isFinite(amplitude) ? amplitude : 1.0;
+    // Stationary OU magnitude is the input `mode_amp` (per real-and-imag
+    // pair, scaled by 1/sqrt(2) so that <|amp|^2> = mode_amp^2 per component).
+    const ampScale = isFinite(mode_amp) ? mode_amp : 1.0;
 
     // Deterministic seeded PRNG so the plot is stable as the user types.
-    const seed = hashSeed(turbForceSeedSalt, kmin, kmax, nModes, currentDim);
+    const seed = hashSeed(turbForceSeedSalt, k_min, k_max, nModes, currentDim);
     const rng = mulberry32(seed);
 
     // Draw amplitudes for VDIM=3 components per mode
@@ -2942,8 +2979,8 @@
       const c3d = container.querySelector('.plot-3d-controls');
       if (c3d) c3d.style.display = 'none';
 
-      const boxsize = state.grid_space?.boxsize || [];
-      const Lx = parseFloat(boxsize[0]) || 1;
+      const box_size = state.grid_space?.box_size || [];
+      const Lx = parseFloat(box_size[0]) || 1;
 
       const exExpr = translateExpr(state.ext_emf?.Ex || '0.');
       const eyExpr = translateExpr(state.ext_emf?.Ey || '0.');
@@ -3066,10 +3103,10 @@
     const controls3d = container.querySelector('.plot-3d-controls');
     if (controls3d) controls3d.style.display = currentDim === 3 ? '' : 'none';
 
-    const boxsize = state.grid_space?.boxsize || [];
-    const Lx = parseFloat(boxsize[0]) || 1;
-    const Ly = parseFloat(boxsize[1]) || 1;
-    const Lz = parseFloat(boxsize[2]) || 1;
+    const box_size = state.grid_space?.box_size || [];
+    const Lx = parseFloat(box_size[0]) || 1;
+    const Ly = parseFloat(box_size[1]) || 1;
+    const Lz = parseFloat(box_size[2]) || 1;
     const axisNames = ['x', 'y', 'z'];
 
     const exExpr = translateExpr(state.ext_emf?.Ex || '0.');
@@ -3230,39 +3267,39 @@
     _eFieldPlotTimer = setTimeout(renderEFieldPlot, 100);
   }
 
-  // ---- nsp density heatmap plot ----
+  // ---- number_density density heatmap plot ----
   let _nspPlotTimer = null;
   let nspSliceAxis = 2;
   let nspSlicePos = 0.5;
 
   function renderNspPlot() {
-    const container = document.getElementById('nsp-plot');
+    const container = document.getElementById('number_density-plot');
     if (!container) return;
-    const canvas = document.getElementById('nsp-canvas');
-    const msgEl = document.getElementById('nsp-plot-msg');
+    const canvas = document.getElementById('number_density-canvas');
+    const msgEl = document.getElementById('number_density-plot-msg');
     if (!canvas || !msgEl) return;
 
     if (currentDim === 1) {
-      // --- 1D line plot with domain_boundary clipping and nsp_domain masking ---
+      // --- 1D line plot with initial_bounds clipping and mask masking ---
       container.style.display = '';
       const c3d = container.querySelector('.plot-3d-controls');
       if (c3d) c3d.style.display = 'none';
 
-      const boxsize = state.grid_space?.boxsize || [];
-      const Lx = parseFloat(boxsize[0]) || 1;
+      const box_size = state.grid_space?.box_size || [];
+      const Lx = parseFloat(box_size[0]) || 1;
 
       const spIdx = activeSpeciesIdx['species'] || 0;
       const speciesData = state.species?.[spIdx];
       if (!speciesData) return;
 
-      const ctVals = speciesData.ct || [];
-      const nspExpr = translateExpr(speciesData.nsp || '1.', ctVals);
+      const ctVals = speciesData.constants || [];
+      const nspExpr = translateExpr(speciesData.number_density || '1.', ctVals);
 
-      const domBd = speciesData.domain_boundary || [];
+      const domBd = speciesData.initial_bounds || [];
       const xlo = (Number(domBd[0]) >= 0) ? Number(domBd[0]) : 0;
       const xhi = (Number(domBd[1]) >= 0) ? Number(domBd[1]) : Lx;
 
-      const nspDomainStr = (speciesData.nsp_domain || '').trim();
+      const nspDomainStr = (speciesData.mask || '').trim();
       const nspDomainExpr = nspDomainStr ? translateExpr(nspDomainStr, ctVals) : null;
 
       const NX = 200;
@@ -3288,7 +3325,7 @@
         for (let ix = 0; ix < NX; ix++) {
           const x = Lx * (ix + 0.5) / NX;
           if (x < xlo || x > xhi) { data[ix] = 0; mask[ix] = 0; continue; }
-          if (evalDomain && evalDomain(x, 0, 0) <= 0) { data[ix] = 0; mask[ix] = 0; continue; }
+          if (evalDomain && !(evalDomain(x, 0, 0) > 0)) { data[ix] = 0; mask[ix] = 0; continue; }
           const val = evalNsp(x, 0, 0);
           data[ix] = val; mask[ix] = 1;
           if (val < vmin) vmin = val;
@@ -3382,21 +3419,21 @@
     const nspControls3d = container.querySelector('.plot-3d-controls');
     if (nspControls3d) nspControls3d.style.display = currentDim === 3 ? '' : 'none';
 
-    const boxsize = state.grid_space?.boxsize || [];
-    const Lx = parseFloat(boxsize[0]) || 1;
-    const Ly = parseFloat(boxsize[1]) || 1;
-    const Lz = parseFloat(boxsize[2]) || 1;
+    const box_size = state.grid_space?.box_size || [];
+    const Lx = parseFloat(box_size[0]) || 1;
+    const Ly = parseFloat(box_size[1]) || 1;
+    const Lz = parseFloat(box_size[2]) || 1;
     const axisNames = ['x', 'y', 'z'];
 
     const spIdx = activeSpeciesIdx['species'] || 0;
     const speciesData = state.species?.[spIdx];
     if (!speciesData) return;
 
-    const ctVals = speciesData.ct || [];
-    const nspExpr = translateExpr(speciesData.nsp || '1.', ctVals);
+    const ctVals = speciesData.constants || [];
+    const nspExpr = translateExpr(speciesData.number_density || '1.', ctVals);
 
-    // domain_boundary: [x_l, x_r, y_l, y_r, z_l, z_r]
-    const domBd = speciesData.domain_boundary || [];
+    // initial_bounds: [x_l, x_r, y_l, y_r, z_l, z_r]
+    const domBd = speciesData.initial_bounds || [];
     const fullL = [Lx, Ly, Lz];
 
     let hAxisLabel, vAxisLabel, La, Lb;
@@ -3416,10 +3453,10 @@
         c[freeAxes[0]] = a; c[freeAxes[1]] = b; c[sa] = fixedCoord;
         return c;
       };
-      const sliceValEl = document.getElementById('nsp-slice-val');
+      const sliceValEl = document.getElementById('number_density-slice-val');
       if (sliceValEl) sliceValEl.textContent = axisNames[sa] + ' = ' + fixedCoord.toFixed(1);
 
-      // Check if fixed coordinate is outside domain_boundary for slice axis
+      // Check if fixed coordinate is outside initial_bounds for slice axis
       const fixLo = Number(domBd[2 * sa]);
       const fixHi = Number(domBd[2 * sa + 1]);
       if ((fixLo >= 0 && fixedCoord < fixLo) || (fixHi >= 0 && fixedCoord > fixHi)) {
@@ -3440,8 +3477,8 @@
       domHiB = (currentDim >= 2 && Number(domBd[3]) >= 0) ? Number(domBd[3]) : Ly;
     }
 
-    // nsp_domain: spatial mask expression
-    const nspDomainStr = (speciesData.nsp_domain || '').trim();
+    // mask: spatial mask expression
+    const nspDomainStr = (speciesData.mask || '').trim();
     const nspDomainExpr = nspDomainStr ? translateExpr(nspDomainStr, ctVals) : null;
 
     const NX = 200, NY = 200;
@@ -3470,19 +3507,19 @@
         for (let ia = 0; ia < NX; ia++) {
           const a = La * (ia + 0.5) / NX;
           const idx = ib * NX + ia;
-          // If fixed axis is outside domain_boundary, entire slice is masked
+          // If fixed axis is outside initial_bounds, entire slice is masked
           if (fixedAxisMasked) {
             vals[idx] = 0; mask[idx] = 0;
             continue;
           }
-          // Apply domain_boundary clipping for free axes
+          // Apply initial_bounds clipping for free axes
           if (a < domLoA || a > domHiA || b < domLoB || b > domHiB) {
             vals[idx] = 0; mask[idx] = 0;
             continue;
           }
           const [cx, cy, cz] = buildCoords(a, b);
-          // Apply nsp_domain mask
-          if (evalDomain && evalDomain(cx, cy, cz) <= 0) {
+          // Apply mask mask
+          if (evalDomain && !(evalDomain(cx, cy, cz) > 0)) {
             vals[idx] = 0; mask[idx] = 0;
             continue;
           }
@@ -3594,53 +3631,53 @@
     _nspPlotTimer = setTimeout(renderNspPlot, 100);
   }
 
-  // ---- vsp velocity spatial plot ----
+  // ---- u_drift_profile velocity spatial plot ----
   let selectedVspComponent = 'mag';
   let vspSliceAxis = 2;
   let vspSlicePos = 0.5;
   let _vspPlotTimer = null;
 
   function renderVspPlot() {
-    const container = document.getElementById('vsp-plot');
+    const container = document.getElementById('u_drift_profile-plot');
     if (!container) return;
-    const canvas = document.getElementById('vsp-canvas');
-    const msgEl = document.getElementById('vsp-plot-msg');
+    const canvas = document.getElementById('u_drift_profile-canvas');
+    const msgEl = document.getElementById('u_drift_profile-plot-msg');
     if (!canvas || !msgEl) return;
 
-    const boxsize = state.grid_space?.boxsize || [];
-    const Lx = parseFloat(boxsize[0]) || 1;
-    const Ly = parseFloat(boxsize[1]) || 1;
-    const Lz = parseFloat(boxsize[2]) || 1;
+    const box_size = state.grid_space?.box_size || [];
+    const Lx = parseFloat(box_size[0]) || 1;
+    const Ly = parseFloat(box_size[1]) || 1;
+    const Lz = parseFloat(box_size[2]) || 1;
 
     const spIdx = activeSpeciesIdx['species'] || 0;
     const speciesData = state.species?.[spIdx];
     if (!speciesData) return;
 
-    const ctVals = speciesData.ct || [];
-    const vsp = speciesData.vsp || ['', '', ''];
-    const vdrift = speciesData.vdrift || [0, 0, 0];
+    const ctVals = speciesData.constants || [];
+    const u_drift_profile = speciesData.u_drift_profile || ['', '', ''];
+    const u_drift = speciesData.u_drift || [0, 0, 0];
 
-    // Check if ALL vsp components are empty — uniform velocity
-    const allEmpty = vsp.every(s => !s || !s.trim());
+    // Check if ALL u_drift_profile components are empty — uniform velocity
+    const allEmpty = u_drift_profile.every(s => !s || !s.trim());
     if (allEmpty) {
       canvas.width = 0;
       canvas.height = 0;
-      const vd = vdrift.map(v => Number(v) || 0);
-      msgEl.textContent = 'Uniform velocity (γ*v): vdrift = [' + vd.join(', ') + ']';
+      const vd = u_drift.map(v => Number(v) || 0);
+      msgEl.textContent = 'Uniform velocity (γ*v): u_drift = [' + vd.join(', ') + ']';
       msgEl.style.display = '';
       const c3d = container.querySelector('.plot-3d-controls');
       if (c3d) c3d.style.display = 'none';
       return;
     }
 
-    // Build expression for each component: if vsp[i] non-empty, use it; else use vdrift[i] constant
+    // Build expression for each component: if u_drift_profile[i] non-empty, use it; else use u_drift[i] constant
     const compExprs = [];
     for (let i = 0; i < 3; i++) {
-      const s = (vsp[i] || '').trim();
+      const s = (u_drift_profile[i] || '').trim();
       if (s) {
         compExprs.push(translateExpr(s, ctVals));
       } else {
-        compExprs.push(String(Number(vdrift[i]) || 0));
+        compExprs.push(String(Number(u_drift[i]) || 0));
       }
     }
 
@@ -3794,7 +3831,7 @@
         c[freeAxes[0]] = a; c[freeAxes[1]] = b; c[sa] = fixedCoord;
         return c;
       };
-      const sliceValEl = document.getElementById('vsp-slice-val');
+      const sliceValEl = document.getElementById('u_drift_profile-slice-val');
       if (sliceValEl) sliceValEl.textContent = axisNames[sa] + ' = ' + fixedCoord.toFixed(1);
     } else {
       La = Lx; Lb = Ly;
@@ -3935,36 +3972,36 @@
   let _selectrulePlotTimer = null;
 
   function renderSelectrulePlot() {
-    const container = document.getElementById('selectrule-plot');
+    const container = document.getElementById('filter-plot');
     if (!container) return;
-    const canvas = document.getElementById('selectrule-canvas');
-    const msgEl = document.getElementById('selectrule-plot-msg');
+    const canvas = document.getElementById('filter-canvas');
+    const msgEl = document.getElementById('filter-plot-msg');
     if (!canvas || !msgEl) return;
 
     const spIdx = activeSpeciesIdx['raw_diag'] || 0;
     const rawData = state.raw_diag?.[spIdx];
     if (!rawData) return;
 
-    const selectruleStr = (rawData.selectrule || '1.').trim();
+    const selectruleStr = (rawData.filter || '1.').trim();
 
-    // Default: all particles selected
+    // Filter accepts all; bounds, speed and sampling still apply
     if (selectruleStr === '1.' || selectruleStr === '1' || selectruleStr === '1.0') {
       canvas.width = 0;
       canvas.height = 0;
-      msgEl.textContent = 'Default: all particles selected';
+      msgEl.textContent = 'Filter accepts all; bounds, speed and sampling still apply';
       msgEl.style.display = '';
       const c3d = container.querySelector('.plot-3d-controls');
       if (c3d) c3d.style.display = 'none';
       return;
     }
 
-    const ctVals = rawData.ct || [];
+    const ctVals = rawData.constants || [];
     const expr = translateExpr(selectruleStr, ctVals);
 
-    const boxsize = state.grid_space?.boxsize || [];
-    const Lx = parseFloat(boxsize[0]) || 1;
-    const Ly = parseFloat(boxsize[1]) || 1;
-    const Lz = parseFloat(boxsize[2]) || 1;
+    const box_size = state.grid_space?.box_size || [];
+    const Lx = parseFloat(box_size[0]) || 1;
+    const Ly = parseFloat(box_size[1]) || 1;
+    const Lz = parseFloat(box_size[2]) || 1;
     const axisNames = ['x', 'y', 'z'];
 
     if (currentDim === 1) {
@@ -3996,8 +4033,8 @@
           data[ix] = val > 0 ? 1 : 0;
         }
 
-        msgEl.textContent = '';
-        msgEl.style.display = 'none';
+        msgEl.textContent = 'Filter at vx = vy = vz = 0; bounds, speed and sampling also apply at output.';
+        msgEl.style.display = '';
 
         const vmin = 0, vmax = 1;
 
@@ -4053,7 +4090,7 @@
         ctx.clearRect(0, 0, canvasW, canvasH);
         canvas.width = 0;
         canvas.height = 0;
-        msgEl.textContent = 'Cannot evaluate selectrule expression';
+        msgEl.textContent = 'Cannot evaluate filter expression';
         msgEl.style.display = '';
       }
       return;
@@ -4069,7 +4106,7 @@
     // Show/hide 3D controls and ensure slider is bound
     const srControls3d = container.querySelector('.plot-3d-controls');
     if (srControls3d) srControls3d.style.display = currentDim === 3 ? '' : 'none';
-    const srSlider = document.getElementById('selectrule-slice-pos');
+    const srSlider = document.getElementById('filter-slice-pos');
     if (srSlider && !srSlider._bound) {
       srSlider._bound = true;
       srSlider.addEventListener('input', () => {
@@ -4077,7 +4114,7 @@
         renderSelectrulePlot();
       });
     }
-    const srAxisSel = document.getElementById('selectrule-slice-axis');
+    const srAxisSel = document.getElementById('filter-slice-axis');
     if (srAxisSel && !srAxisSel._bound) {
       srAxisSel._bound = true;
       srAxisSel.addEventListener('change', () => {
@@ -4102,7 +4139,7 @@
         c[freeAxes[0]] = a; c[freeAxes[1]] = b; c[sa] = fixedCoord;
         return c;
       };
-      const sliceValEl = document.getElementById('selectrule-slice-val');
+      const sliceValEl = document.getElementById('filter-slice-val');
       if (sliceValEl) sliceValEl.textContent = axisNames[sa] + ' = ' + fixedCoord.toFixed(1);
     } else {
       La = Lx; Lb = Ly;
@@ -4138,8 +4175,8 @@
         }
       }
 
-      msgEl.textContent = '';
-      msgEl.style.display = 'none';
+      msgEl.textContent = 'Filter at vx = vy = vz = 0; bounds, speed and sampling also apply at output.';
+      msgEl.style.display = '';
 
       const colorMap = COLORMAPS[selectedColormap] || COLORMAPS.viridis;
 
@@ -4225,7 +4262,7 @@
       ctx.clearRect(0, 0, canvasW, canvasH);
       canvas.width = 0;
       canvas.height = 0;
-      msgEl.textContent = 'Cannot evaluate selectrule expression';
+      msgEl.textContent = 'Cannot evaluate filter expression';
       msgEl.style.display = '';
     }
   }
@@ -4243,21 +4280,21 @@
     const data = state[skey]?.[spIdx];
     if (!data) return;
 
-    const ncells = state.grid_space?.ncells || [];
-    const xres = data.xres || [];
-    const pres = data.pres || [512, 512, 512];
+    const n_cells = state.grid_space?.n_cells || [];
+    const x_bins = data.x_bins || [];
+    const u_bins = data.u_bins || [512, 512, 512];
     const dimLabels = ['x', 'y', 'z'];
 
-    // --- xres validation against ncells ---
-    let warnContainer = container.querySelector('.xres-validation-msg');
+    // --- x_bins validation against n_cells ---
+    let warnContainer = container.querySelector('.x_bins-validation-msg');
     if (!warnContainer) {
-      // Find the xres field row and append after its field-input
-      const xresInput = container.querySelector('[data-key="xres"]');
+      // Find the x_bins field row and append after its field-input
+      const xresInput = container.querySelector('[data-key="x_bins"]');
       if (xresInput) {
         const fieldInput = xresInput.closest('.field-input');
         if (fieldInput) {
           warnContainer = document.createElement('div');
-          warnContainer.className = 'xres-validation-msg';
+          warnContainer.className = 'x_bins-validation-msg';
           fieldInput.appendChild(warnContainer);
         }
       }
@@ -4265,24 +4302,24 @@
     if (warnContainer) {
       const warnings = [];
       for (let i = 0; i < currentDim; i++) {
-        const xr = Number(xres[i]) || 0;
-        const nc = Number(ncells[i]) || 0;
+        const xr = Number(x_bins[i]) || 0;
+        const nc = Number(n_cells[i]) || 0;
         if (nc > 0 && xr > nc) {
-          warnings.push(`xres[${dimLabels[i]}]=${xr} exceeds ncells[${dimLabels[i]}]=${nc} — output will be capped at ncells`);
+          warnings.push(`x_bins[${dimLabels[i]}]=${xr} exceeds n_cells[${dimLabels[i]}]=${nc} — output will be capped at n_cells`);
         }
       }
       warnContainer.innerHTML = warnings.map(w => `<div class="validation-warn">\u26a0 ${w}</div>`).join('');
     }
 
-    // --- Recommended xres pill buttons ---
-    let recContainer = container.querySelector('.xres-recommendations');
+    // --- Recommended x_bins pill buttons ---
+    let recContainer = container.querySelector('.x_bins-recommendations');
     if (!recContainer) {
-      const xresInput = container.querySelector('[data-key="xres"]');
+      const xresInput = container.querySelector('[data-key="x_bins"]');
       if (xresInput) {
         const fieldInput = xresInput.closest('.field-input');
         if (fieldInput) {
           recContainer = document.createElement('div');
-          recContainer.className = 'xres-recommendations';
+          recContainer.className = 'x_bins-recommendations';
           fieldInput.appendChild(recContainer);
         }
       }
@@ -4296,27 +4333,28 @@
         { label: '\u215b', div: 8 },
       ];
       for (let i = 0; i < currentDim; i++) {
-        const nc = Number(ncells[i]) || 128;
-        recHTML += `<div class="xres-rec-row">`;
+        const nc = Number(n_cells[i]) || 128;
+        recHTML += `<div class="x_bins-rec-row">`;
         recHTML += `<span class="rec-label">${dimLabels[i]}:</span>`;
         for (const fr of fracs) {
           const val = Math.max(1, Math.floor(nc / fr.div));
-          recHTML += `<button type="button" class="xres-rec-pill" data-dim="${i}" data-val="${val}">`;
+          recHTML += `<button type="button" class="x_bins-rec-pill" data-dim="${i}" data-val="${val}">`;
           recHTML += `${val}<span class="pill-frac">${fr.label}</span></button>`;
         }
         recHTML += `</div>`;
       }
       recContainer.innerHTML = recHTML;
       // Bind pill clicks
-      recContainer.querySelectorAll('.xres-rec-pill').forEach(btn => {
+      recContainer.querySelectorAll('.x_bins-rec-pill').forEach(btn => {
         btn.addEventListener('click', () => {
           const dimIdx = parseInt(btn.dataset.dim);
           const val = parseInt(btn.dataset.val);
           // Update state
-          if (!Array.isArray(data.xres)) data.xres = [256, 256, 256];
-          data.xres[dimIdx] = val;
+          if (!Array.isArray(data.x_bins)) data.x_bins = [256, 256, 256];
+          data.x_bins[dimIdx] = val;
+          markPresent(data, 'x_bins', dimIdx + 1);
           // Update the corresponding input
-          const inp = container.querySelector(`[data-key="xres"][data-index="${dimIdx}"]`);
+          const inp = container.querySelector(`[data-key="x_bins"][data-index="${dimIdx}"]`);
           if (inp) inp.value = val;
           // Re-validate and re-estimate
           validateDiagSpecies(skey, spIdx);
@@ -4330,36 +4368,36 @@
   }
 
   function computeDumpSchedule() {
-    // Supports both iteration-based (niter + ndump) and time-based (tend + tdump) modes.
+    // Supports both iteration-based (n_steps + dump_every) and time-based (t_end + dump_dt) modes.
     const dt = Number(state.time?.dt) || 0;
-    const niter = Number(state.time?.niter) || 0;
-    const tend = Number(state.time?.tend) || 0;
-    const ndump = Number(state.global_output?.ndump) || 0;
-    const tdump = Number(state.global_output?.tdump) || 0;
+    const n_steps = Number(state.time?.n_steps) || 0;
+    const t_end = Number(state.time?.t_end) || 0;
+    const dump_every = Number(state.global_output?.dump_every) || 0;
+    const dump_dt = Number(state.global_output?.dump_dt) || 0;
 
-    const simTime = niter > 0 ? niter * dt : tend;
-    const dumpInterval = ndump > 0 ? ndump * dt : tdump;
+    const simTime = n_steps > 0 ? n_steps * dt : t_end;
+    const dumpInterval = dump_every > 0 ? dump_every * dt : dump_dt;
     const numDumps = (simTime > 0 && dumpInterval > 0)
       ? Math.floor(simTime / dumpInterval)
       : 0;
-    const niterLabel = niter > 0 ? `niter=${niter}` : (tend > 0 ? `tend=${tend}` : '');
-    const ndumpLabel = ndump > 0 ? `ndump=${ndump}` : (tdump > 0 ? `tdump=${tdump}` : '');
+    const niterLabel = n_steps > 0 ? `n_steps=${n_steps}` : (t_end > 0 ? `t_end=${t_end}` : '');
+    const ndumpLabel = dump_every > 0 ? `dump_every=${dump_every}` : (dump_dt > 0 ? `dump_dt=${dump_dt}` : '');
     return { numDumps, niterLabel, ndumpLabel };
   }
 
   function buildDiagSizePanel(container, data, spIdx) {
-    const ncells = state.grid_space?.ncells || [];
-    const xres = data.xres || [];
-    const pres = data.pres || [512, 512, 512];
+    const n_cells = state.grid_space?.n_cells || [];
+    const x_bins = data.x_bins || [];
+    const u_bins = data.u_bins || [512, 512, 512];
     const { numDumps, niterLabel, ndumpLabel } = computeDumpSchedule();
 
     // Parse selected phase spaces
-    const psStr = data.phasespaces || '';
+    const psStr = data.phase_spaces || '';
     const selectedPS = psStr.split(',').map(s => s.trim()).filter(s => s);
 
-    // Fluid moments (vfld / pfld) — always written at full ncells resolution
-    const dmpVfld = Array.isArray(data.dmp_vfld) ? data.dmp_vfld : [false, false];
-    const dmpPfld = Array.isArray(data.dmp_pfld) ? data.dmp_pfld : [false, false];
+    // Fluid moments (vfld / pfld) — always written at full n_cells resolution
+    const dmpVfld = Array.isArray(data.dump_bulk_velocity) ? data.dump_bulk_velocity : [false, false];
+    const dmpPfld = Array.isArray(data.dump_pressure) ? data.dump_pressure : [false, false];
     const fieldFlags = [
       { on: !!dmpVfld[0], name: '|v|',      count: 1 },
       { on: !!dmpVfld[1], name: 'v\u20d7',  count: 3 },
@@ -4386,15 +4424,15 @@
     const rows = [];
 
     for (const ps of selectedPS) {
-      const { cells, dimsStr } = calcPhaseSpaceSize(ps, xres, pres, ncells);
+      const { cells, dimsStr } = calcPhaseSpaceSize(ps, x_bins, u_bins, n_cells);
       const bytes = cells * BYTES_PER_CELL;
       totalBytes += bytes;
       rows.push({ name: ps, dims: dimsStr, bytes });
     }
 
-    // Fluid moments: each "field" is a full-grid array of ncells cells
+    // Fluid moments: each "field" is a full-grid array of n_cells cells
     const gridDims = [];
-    for (let i = 0; i < currentDim; i++) gridDims.push(Number(ncells[i]) || 0);
+    for (let i = 0; i < currentDim; i++) gridDims.push(Number(n_cells[i]) || 0);
     const gridCells = gridDims.reduce((a, b) => a * b, 1);
     const gridDimsStr = gridDims.join(' \u00d7 ');
     for (const f of fieldFlags) {
@@ -4436,14 +4474,14 @@
     const container = document.querySelector('.section[data-section="field_diag"]');
     if (!container) return;
     const data = state.field_diag || {};
-    const ncells = state.grid_space?.ncells || [];
+    const n_cells = state.grid_space?.n_cells || [];
     const { numDumps, niterLabel, ndumpLabel } = computeDumpSchedule();
 
     // Field-diag flags: each "intensity" entry is 1 scalar field, each "vector"
     // entry is 3 components — matches the inner loops in dHybridR flddiag.f90.
-    const efld = Array.isArray(data.dmp_efld) ? data.dmp_efld : [false, false, false, false];
-    const bfld = Array.isArray(data.dmp_bfld) ? data.dmp_bfld : [false, false, false, false];
-    const jfld = Array.isArray(data.dmp_jfld) ? data.dmp_jfld : [false, false];
+    const efld = Array.isArray(data.dump_E) ? data.dump_E : [false, false, false, false];
+    const bfld = Array.isArray(data.dump_B) ? data.dump_B : [false, false, false, false];
+    const jfld = Array.isArray(data.dump_J) ? data.dump_J : [false, false];
     const flags = [
       { on: !!efld[0], name: 'Self |E|',   count: 1 },
       { on: !!efld[1], name: 'Self E\u20d7',  count: 3 },
@@ -4472,7 +4510,7 @@
 
     const BYTES_PER_CELL = 4;
     const gridDims = [];
-    for (let i = 0; i < currentDim; i++) gridDims.push(Number(ncells[i]) || 0);
+    for (let i = 0; i < currentDim; i++) gridDims.push(Number(n_cells[i]) || 0);
     const gridCells = gridDims.reduce((a, b) => a * b, 1);
     const gridDimsStr = gridDims.join(' \u00d7 ');
 
@@ -4502,23 +4540,23 @@
     panel.innerHTML = html;
   }
 
-  function calcPhaseSpaceSize(psName, xres, pres, ncells) {
+  function calcPhaseSpaceSize(psName, x_bins, u_bins, n_cells) {
     // x3x2x1 is the special charge density case: always full grid
     if (psName === 'x3x2x1') {
       const dims = [];
       for (let i = 0; i < currentDim; i++) {
-        dims.push(Math.min(Number(xres[i]) || 256, Number(ncells[i]) || 128));
+        dims.push(Math.min(Number(x_bins[i]) || 256, Number(n_cells[i]) || 128));
       }
       const cells = dims.reduce((a, b) => a * b, 1);
       return { cells, dimsStr: dims.join(' \u00d7 ') };
     }
 
     // Parse the name: axes right-to-left
-    // e.g. 'p3x2' → axis1=x2, axis2=p3
-    // e.g. 'p1x1' → axis1=x1, axis2=p1
-    // Name parts: match 2-char tokens like x1, x2, x3, p1, p2, p3, pt, et
+    // e.g. 'u3x2' → axis1=x2, axis2=u3
+    // e.g. 'u1x1' → axis1=x1, axis2=u1
+    // Name parts: match 2-char tokens like x1, x2, x3, u1, u2, u3, ut, et
     const tokens = [];
-    const regex = /(x[123]|p[123]|pt|et)/g;
+    const regex = /(x[123]|u[123]|ut|et)/g;
     let m;
     while ((m = regex.exec(psName)) !== null) tokens.push(m[1]);
 
@@ -4529,7 +4567,7 @@
     const sizes = [];
     const labels = [];
     for (const tok of tokens) {
-      const { size, label } = resolveAxisSize(tok, xres, pres, ncells);
+      const { size, label } = resolveAxisSize(tok, x_bins, u_bins, n_cells);
       sizes.push(size);
       labels.push(label);
     }
@@ -4540,25 +4578,25 @@
     return { cells, dimsStr };
   }
 
-  function resolveAxisSize(tok, xres, pres, ncells) {
+  function resolveAxisSize(tok, x_bins, u_bins, n_cells) {
     if (tok === 'x1') {
-      const v = Math.min(Number(xres[0]) || 256, Number(ncells[0]) || 128);
+      const v = Math.min(Number(x_bins[0]) || 256, Number(n_cells[0]) || 128);
       return { size: v, label: 'x1' };
     }
     if (tok === 'x2') {
-      const v = Math.min(Number(xres[1]) || 256, Number(ncells[1]) || 128);
+      const v = Math.min(Number(x_bins[1]) || 256, Number(n_cells[1]) || 128);
       return { size: v, label: 'x2' };
     }
     if (tok === 'x3') {
-      const v = Math.min(Number(xres[2]) || 256, Number(ncells[2]) || 128);
+      const v = Math.min(Number(x_bins[2]) || 256, Number(n_cells[2]) || 128);
       return { size: v, label: 'x3' };
     }
-    if (tok === 'p1') return { size: Number(pres[0]) || 512, label: 'p1' };
-    if (tok === 'p2') return { size: Number(pres[1]) || 512, label: 'p2' };
-    if (tok === 'p3') return { size: Number(pres[2]) || 512, label: 'p3' };
-    if (tok === 'pt') {
-      const avg = Math.round(((Number(pres[0]) || 512) + (Number(pres[1]) || 512) + (Number(pres[2]) || 512)) / 3);
-      return { size: avg, label: 'pt' };
+    if (tok === 'u1') return { size: Number(u_bins[0]) || 512, label: 'u1' };
+    if (tok === 'u2') return { size: Number(u_bins[1]) || 512, label: 'u2' };
+    if (tok === 'u3') return { size: Number(u_bins[2]) || 512, label: 'u3' };
+    if (tok === 'ut') {
+      const avg = Math.round(((Number(u_bins[0]) || 512) + (Number(u_bins[1]) || 512) + (Number(u_bins[2]) || 512)) / 3);
+      return { size: avg, label: '|u|' };
     }
     if (tok === 'et') return { size: 256, label: 'et' };
     return { size: 0, label: tok };
@@ -4580,78 +4618,78 @@
     const warnings = [];
 
     if (skey === 'grid_space') {
-      const ncells = state.grid_space?.ncells || [];
-      const boxsize = state.grid_space?.boxsize || [];
+      const n_cells = state.grid_space?.n_cells || [];
+      const box_size = state.grid_space?.box_size || [];
       const dimLabels = ['x', 'y', 'z'];
       for (let i = 0; i < currentDim; i++) {
-        const nc = Number(ncells[i]) || 0;
-        const bs = Number(boxsize[i]) || 0;
-        if (nc <= 0) warnings.push(`ncells[${dimLabels[i]}] = ${nc} — must be > 0`);
-        if (bs <= 0) warnings.push(`boxsize[${dimLabels[i]}] = ${bs} — must be > 0`);
+        const nc = Number(n_cells[i]) || 0;
+        const bs = Number(box_size[i]) || 0;
+        if (nc <= 0) warnings.push(`n_cells[${dimLabels[i]}] = ${nc} — must be > 0`);
+        if (bs <= 0) warnings.push(`box_size[${dimLabels[i]}] = ${bs} — must be > 0`);
       }
     }
 
     if (skey === 'time') {
       const c = Number(state.time?.c) || 0;
-      const niter = Number(state.time?.niter);
-      const tend = parseFloat(state.time?.tend);
+      const n_steps = Number(state.time?.n_steps);
+      const t_end = parseFloat(state.time?.t_end);
       const stiter = Number(state.time?.stiter) || 0;
-      const niterDisabled = isNaN(niter) || niter < 0;
-      const tendDisabled = isNaN(tend) || tend < 0;
+      const niterDisabled = isNaN(n_steps) || n_steps < 0;
+      const tendDisabled = isNaN(t_end) || t_end < 0;
 
       if (c <= 0) warnings.push(`c = ${c} — speed of light must be > 0`);
       if (niterDisabled && tendDisabled) {
-        warnings.push('Both niter and tend are disabled (-1) — one must be set');
+        warnings.push('Both n_steps and t_end are disabled (-1) — one must be set');
       }
       if (!niterDisabled && !tendDisabled) {
-        warnings.push('Both niter and tend are set — the code will refuse to start. Set one to -1');
+        warnings.push('Both n_steps and t_end are set — the code will refuse to start. Set one to -1');
       }
-      if (!niterDisabled && niter <= 0) warnings.push(`niter = ${niter} — must be > 0`);
-      if (!tendDisabled && tend <= 0) warnings.push(`tend = ${tend} — must be > 0`);
-      if (!niterDisabled && stiter >= niter && stiter > 0) {
-        warnings.push(`stiter (${stiter}) ≥ niter (${niter}) — simulation will never start`);
+      if (!niterDisabled && n_steps <= 0) warnings.push(`n_steps = ${n_steps} — must be > 0`);
+      if (!tendDisabled && t_end <= 0) warnings.push(`t_end = ${t_end} — must be > 0`);
+      if (!niterDisabled && stiter >= n_steps && stiter > 0) {
+        warnings.push(`stiter (${stiter}) ≥ n_steps (${n_steps}) — simulation will never start`);
       }
     }
 
     if (skey === 'global_output') {
-      const niter = Number(state.time?.niter);
-      const ndump = Number(state.global_output?.ndump) || 0;
-      const tdump = parseFloat(state.global_output?.tdump);
-      const ndumpSet = ndump > 0;
-      const tdumpSet = !isNaN(tdump) && tdump > 0;
+      const n_steps = Number(state.time?.n_steps);
+      const dump_every = Number(state.global_output?.dump_every) || 0;
+      const dump_dt = parseFloat(state.global_output?.dump_dt);
+      const ndumpSet = dump_every > 0;
+      const tdumpSet = !isNaN(dump_dt) && dump_dt > 0;
 
-      if (niter > 0 && ndumpSet && ndump > niter) warnings.push(`ndump (${ndump}) > niter (${niter}) — no diagnostics will be written`);
-      if (ndumpSet && tdumpSet) warnings.push('Both ndump and tdump are set — the code will refuse to start. Set one to -1');
-      if (!ndumpSet && !tdumpSet) warnings.push('Both ndump and tdump are disabled — no diagnostics will be written');
+      if (n_steps > 0 && ndumpSet && dump_every > n_steps) warnings.push(`dump_every (${dump_every}) > n_steps (${n_steps}) — no diagnostics will be written`);
+      if (ndumpSet && tdumpSet) warnings.push('Both dump_every and dump_dt are set — the code will refuse to start. Set one to -1');
+      if (!ndumpSet && !tdumpSet) warnings.push('Both dump_every and dump_dt are disabled — no diagnostics will be written');
     }
 
     if (skey === 'raw_diag') {
-      const ndump = Number(state.global_output?.ndump) || 0;
+      const dump_every = Number(state.global_output?.dump_every) || 0;
       const spIdx = activeSpeciesIdx['raw_diag'] || 0;
       const data = state.raw_diag?.[spIdx];
-      const rawNdump = Number(data?.raw_ndump) || 0;
-      const rawTdump = parseFloat(data?.raw_tdump);
+      const rawNdump = Number(data?.dump_every) || 0;
+      const rawTdump = parseFloat(data?.dump_dt);
       const rawNdumpSet = rawNdump > 0;
       const rawTdumpSet = !isNaN(rawTdump) && rawTdump > 0;
 
-      if (rawNdumpSet && rawTdumpSet) warnings.push('Both raw_ndump and raw_tdump are set — the code will refuse to start. Set one to -1');
-      if (ndump > 0 && rawNdumpSet && rawNdump % ndump !== 0) {
-        warnings.push(`raw_ndump (${rawNdump}) must be a multiple of ndump (${ndump})`);
+      if (rawNdumpSet && rawTdumpSet) warnings.push('Both dump_every and dump_dt are set — the code will refuse to start. Set one to -1');
+      if (dump_every > 0 && rawNdumpSet && rawNdump % dump_every !== 0) {
+        warnings.push(`dump_every (${rawNdump}) must be a multiple of dump_every (${dump_every})`);
       }
 
-      // raw_volume: the code treats -1 as "whole box" only when every value is -1,
+      // bounds: the code treats -1 as "whole box" only when every value is -1,
       // and an inverted box selects nothing (no raw file, no message).
-      const rv = data?.raw_volume || [];
+      const rv = data?.bounds || [];
       const rvVals = [];
       for (let i = 0; i < currentDim * 2; i++) rvVals.push(Number(rv[i] ?? -1));
       if (!rvVals.every(v => v === -1)) {
         if (rvVals.some(v => v === -1)) {
-          warnings.push('raw_volume: -1 only means "whole box" when every value is -1. Set all the values.');
+          warnings.push('bounds: -1 only means "whole box" when every value is -1. Set all the values.');
         } else {
           const axes = ['x', 'y', 'z'];
           for (let a = 0; a < currentDim; a++) {
             if (rvVals[2*a] >= rvVals[2*a+1]) {
-              warnings.push(`raw_volume: ${axes[a]} min (${rvVals[2*a]}) >= max (${rvVals[2*a+1]}): no particles selected, no raw file written`);
+              warnings.push(`bounds: ${axes[a]} min (${rvVals[2*a]}) >= max (${rvVals[2*a+1]}): no particles selected, no raw file written`);
             }
           }
         }
@@ -4662,16 +4700,16 @@
     if (skey === 'ascent' && isSectionEnabled('ascent')) {
       const a = state.ascent || {};
       const enabled = a.enabled;
-      const ndump = Number(a.ndump);
-      const tdump = parseFloat(a.tdump);
-      const ndumpSet = !isNaN(ndump) && ndump >= 1;
-      const tdumpSet = !isNaN(tdump) && tdump > 0;
+      const dump_every = Number(a.dump_every);
+      const dump_dt = parseFloat(a.dump_dt);
+      const ndumpSet = !isNaN(dump_every) && dump_every >= 1;
+      const tdumpSet = !isNaN(dump_dt) && dump_dt > 0;
       const outputs = String(a.outputs || '').split(',').map(s => s.trim()).filter(s => s);
       if (enabled && !ndumpSet && !tdumpSet) {
-        warnings.push('enabled but neither ndump (>= 1) nor tdump (> 0) is set: the run aborts. Set one.');
+        warnings.push('enabled but neither dump_every (>= 1) nor dump_dt (> 0) is set: the run aborts. Set one.');
       }
       if (ndumpSet && tdumpSet) {
-        warnings.push('Both ndump and tdump are set: tdump takes precedence and ndump is ignored.');
+        warnings.push('Both dump_every and dump_dt are set: dump_dt takes precedence and dump_every is ignored.');
       }
       if (enabled && outputs.length === 0) {
         warnings.push('enabled but no outputs selected: nothing will be rendered.');
@@ -4688,38 +4726,38 @@
       }
     }
 
-    // GPU-only: the GPU build aborts at init if gpu_mem_frac is outside (0, 1].
+    // GPU-only: the GPU build aborts at init if gpu_memory_fraction is outside (0, 1].
     if (skey === 'particles' && currentBuild === 'GPU') {
-      const raw = state.particles?.gpu_mem_frac;
+      const raw = state.particles?.gpu_memory_fraction;
       const g = parseFloat(raw);
       if (isNaN(g) || g <= 0 || g > 1) {
-        warnings.push(`gpu_mem_frac = ${raw}: must be in (0, 1] (the GPU build aborts otherwise)`);
+        warnings.push(`gpu_memory_fraction = ${raw}: must be in (0, 1] (the GPU build aborts otherwise)`);
       }
     }
 
-    // domain_boundary: -1 is honoured per value, but an inverted box places no particles.
+    // initial_bounds: -1 is honoured per value, but an inverted box places no particles.
     if (skey === 'species') {
       const specs = state.species || [];
       const axes = ['x', 'y', 'z'];
       for (let i = 0; i < specs.length; i++) {
-        const db = specs[i]?.domain_boundary || [];
+        const db = specs[i]?.initial_bounds || [];
         for (let a = 0; a < currentDim; a++) {
           const lo = Number(db[2*a] ?? -1), hi = Number(db[2*a+1] ?? -1);
           if (lo !== -1 && hi !== -1 && lo >= hi) {
-            warnings.push(`Species ${i+1}: domain_boundary ${axes[a]} min (${lo}) >= max (${hi}): no particles placed`);
+            warnings.push(`Species ${i+1}: initial_bounds ${axes[a]} min (${lo}) >= max (${hi}): no particles placed`);
           }
         }
       }
     }
 
-    // CPU-only: the CPU build aborts at init if any species has spare_size < 0.
+    // CPU-only: the CPU build aborts at init if any species has buffer_headroom < 0.
     if (skey === 'species' && currentBuild === 'CPU') {
       const specs = state.species || [];
       for (let i = 0; i < specs.length; i++) {
-        const raw = specs[i]?.spare_size;
+        const raw = specs[i]?.buffer_headroom;
         const s = parseFloat(raw);
         if (isNaN(s) || s < 0) {
-          warnings.push(`Species ${i+1}: spare_size = ${raw}: must be >= 0 (the CPU build aborts otherwise)`);
+          warnings.push(`Species ${i+1}: buffer_headroom = ${raw}: must be >= 0 (the CPU build aborts otherwise)`);
         }
       }
     }
@@ -4736,33 +4774,33 @@
     const data = state[skey]?.[spIdx]?.[injIdx];
     if (!data) { msgEl.innerHTML = ''; return; }
 
-    const boxsize = state.grid_space?.boxsize || [];
+    const box_size = state.grid_space?.box_size || [];
     const warnings = [];
     const plane = (data.plane || 'yz').toLowerCase();
 
-    // Determine which axis planepos refers to and the box limits for boundary
+    // Determine which axis plane_position refers to and the box limits for transverse_bounds
     // Boundary array layout: for N=(DIM-1) in-plane dims, it's [st1, st2, ..., end1, end2, ...]
-    // i.e., boundary(1:N) are starts, boundary(N+1:2N) are ends
-    // In 2D: 1 in-plane dim → boundary = [start, end] (2 elements)
-    // In 3D: 2 in-plane dims → boundary = [st1, st2, end1, end2] (4 elements)
+    // i.e., transverse_bounds(1:N) are starts, transverse_bounds(N+1:2N) are ends
+    // In 2D: 1 in-plane dim → transverse_bounds = [start, end] (2 elements)
+    // In 3D: 2 in-plane dims → transverse_bounds = [st1, st2, end1, end2] (4 elements)
     const nInPlane = currentDim - 1;
     let planeAxis, planeMax, bdAxes = [];
     if (plane === 'yz') {
-      planeAxis = 'x'; planeMax = Number(boxsize[0]) || 0;
-      if (currentDim >= 2) bdAxes.push({ label: 'y', max: Number(boxsize[1]) || 0, stIdx: 0, endIdx: nInPlane });
-      if (currentDim >= 3) bdAxes.push({ label: 'z', max: Number(boxsize[2]) || 0, stIdx: 1, endIdx: nInPlane + 1 });
+      planeAxis = 'x'; planeMax = Number(box_size[0]) || 0;
+      if (currentDim >= 2) bdAxes.push({ label: 'y', max: Number(box_size[1]) || 0, stIdx: 0, endIdx: nInPlane });
+      if (currentDim >= 3) bdAxes.push({ label: 'z', max: Number(box_size[2]) || 0, stIdx: 1, endIdx: nInPlane + 1 });
     } else if (plane === 'xz') {
-      planeAxis = 'y'; planeMax = currentDim >= 2 ? (Number(boxsize[1]) || 0) : 0;
-      bdAxes.push({ label: 'x', max: Number(boxsize[0]) || 0, stIdx: 0, endIdx: nInPlane });
-      if (currentDim >= 3) bdAxes.push({ label: 'z', max: Number(boxsize[2]) || 0, stIdx: 1, endIdx: nInPlane + 1 });
+      planeAxis = 'y'; planeMax = currentDim >= 2 ? (Number(box_size[1]) || 0) : 0;
+      bdAxes.push({ label: 'x', max: Number(box_size[0]) || 0, stIdx: 0, endIdx: nInPlane });
+      if (currentDim >= 3) bdAxes.push({ label: 'z', max: Number(box_size[2]) || 0, stIdx: 1, endIdx: nInPlane + 1 });
     } else { // xy
-      planeAxis = 'z'; planeMax = currentDim >= 3 ? (Number(boxsize[2]) || 0) : 0;
-      bdAxes.push({ label: 'x', max: Number(boxsize[0]) || 0, stIdx: 0, endIdx: nInPlane });
-      if (currentDim >= 2) bdAxes.push({ label: 'y', max: Number(boxsize[1]) || 0, stIdx: 1, endIdx: nInPlane + 1 });
+      planeAxis = 'z'; planeMax = currentDim >= 3 ? (Number(box_size[2]) || 0) : 0;
+      bdAxes.push({ label: 'x', max: Number(box_size[0]) || 0, stIdx: 0, endIdx: nInPlane });
+      if (currentDim >= 2) bdAxes.push({ label: 'y', max: Number(box_size[1]) || 0, stIdx: 1, endIdx: nInPlane + 1 });
     }
 
-    // Update planepos hint and placeholder to show axis and range
-    const ppInput = container?.querySelector(`input[data-key="planepos"]`);
+    // Update plane_position hint and placeholder to show axis and range
+    const ppInput = container?.querySelector(`input[data-key="plane_position"]`);
     if (ppInput) {
       ppInput.placeholder = planeMax > 0 ? `0…${planeMax}` : '0';
       const hintEl = ppInput.closest('.field-row')?.querySelector('.hint');
@@ -4773,16 +4811,16 @@
       }
     }
 
-    // Validate planepos
-    const pp = Number(data.planepos) || 0;
+    // Validate plane_position
+    const pp = Number(data.plane_position) || 0;
     if (planeMax > 0) {
-      if (pp < 0) warnings.push(`planepos (${pp}) is below 0 — will be clipped to 0`);
-      if (pp > planeMax) warnings.push(`planepos (${pp}) exceeds boxsize(${planeAxis})=${planeMax} — will be clipped`);
+      if (pp < 0) warnings.push(`plane_position (${pp}) is below 0 — will be clipped to 0`);
+      if (pp > planeMax) warnings.push(`plane_position (${pp}) exceeds box_size(${planeAxis})=${planeMax} — will be clipped`);
     }
 
-    // Update boundary array labels, hints, and placeholders based on selected plane
+    // Update transverse_bounds array labels, hints, and placeholders based on selected plane
     if (container) {
-      const bdInput = container.querySelector('[data-key="boundary"]');
+      const bdInput = container.querySelector('[data-key="transverse_bounds"]');
       if (bdInput) {
         const fieldRow = bdInput.closest('.field-row');
         const arrayDiv = bdInput.closest('.array-col')?.parentElement;
@@ -4791,9 +4829,9 @@
           const labelArr = [...axLabels.map(l => `${l}-start`), ...axLabels.map(l => `${l}-end`)];
           const labelEls = arrayDiv.querySelectorAll('.array-col .label');
           labelEls.forEach((el, i) => { if (labelArr[i]) el.textContent = labelArr[i]; });
-          // Set placeholders showing valid range on each boundary input
+          // Set placeholders showing valid range on each transverse_bounds input
           // starts: 0…max, ends: 0…max
-          const bdInputs = arrayDiv.querySelectorAll('input[data-key="boundary"]');
+          const bdInputs = arrayDiv.querySelectorAll('input[data-key="transverse_bounds"]');
           bdInputs.forEach((inp, i) => {
             const axIdx = i < nInPlane ? i : i - nInPlane;
             const ax = bdAxes[axIdx];
@@ -4804,7 +4842,7 @@
             }
           });
         }
-        // Update boundary hint with in-plane axis info
+        // Update transverse_bounds hint with in-plane axis info
         const bdHint = fieldRow?.querySelector('.hint');
         if (bdHint) {
           const axDesc = bdAxes.map(a => a.max > 0 ? `${a.label}: 0…${a.max}` : a.label).join(', ');
@@ -4813,16 +4851,16 @@
       }
     }
 
-    // Validate boundary
-    const bd = data.boundary || [];
+    // Validate transverse_bounds
+    const bd = data.transverse_bounds || [];
     for (const ax of bdAxes) {
       if (ax.max <= 0) continue;
       const st = Number(bd[ax.stIdx]) || 0;
       const en = Number(bd[ax.endIdx]) || 0;
-      if (st < 0) warnings.push(`boundary ${ax.label}-start (${st}) is below 0 — will be clipped`);
-      if (en > ax.max) warnings.push(`boundary ${ax.label}-end (${en}) exceeds boxsize(${ax.label})=${ax.max} — will be clipped`);
-      if (st > en && en > 0) warnings.push(`boundary ${ax.label}-start (${st}) > ${ax.label}-end (${en})`);
-      if (st === en) warnings.push(`boundary ${ax.label}-start = ${ax.label}-end (${st}) — zero-size injection region`);
+      if (st < 0) warnings.push(`transverse_bounds ${ax.label}-start (${st}) is below 0 — will be clipped`);
+      if (en > ax.max) warnings.push(`transverse_bounds ${ax.label}-end (${en}) exceeds box_size(${ax.label})=${ax.max} — will be clipped`);
+      if (st > en && en > 0) warnings.push(`transverse_bounds ${ax.label}-start (${st}) > ${ax.label}-end (${en})`);
+      if (st === en) warnings.push(`transverse_bounds ${ax.label}-start = ${ax.label}-end (${st}) — zero-size injection region`);
     }
 
     if (warnings.length > 0) {
@@ -4869,9 +4907,10 @@
     reader.onload = (ev) => {
       try {
         const parsed = parseInputFile(ev.target.result);
-        applyParsedState(parsed);
+        applyParsedState(parsed, file.name);
         toast(`Loaded ${file.name}`);
       } catch (err) {
+        showLoadReport(file.name, [], err.message);
         toast('Error parsing file: ' + err.message);
       }
     };
@@ -4879,64 +4918,58 @@
     e.target.value = ''; // Reset
   }
 
-  function applyParsedState(parsed) {
-    if (parsed._dim) {
-      currentDim = parsed._dim;
-      dimDropdown?.setValue(String(currentDim));
-    }
-    // Switch build target to match the loaded deck (gpu_mem_frac => GPU,
-    // spare_size => CPU). If the file had neither, keep the current selection
-    // but warn, since the preview may then be wrong for the loaded file.
-    if (parsed._build) {
-      currentBuild = parsed._build;
-      buildDropdown?.setValue(currentBuild);
-    } else {
-      toast(`Could not detect CPU/GPU from this file; using ${currentBuild}. Check the Build selector.`);
-    }
-
+  function applyParsedState(parsed, source = 'input', useEditorDefaults = false) {
+    const dim = parsed._dim || currentDim;
+    const replacement = {};
     for (const [key, sec] of Object.entries(SCHEMA)) {
-      if (parsed[key]) {
-        if (sec.multiPerSpecies) {
-          if (Array.isArray(parsed[key])) {
-            state[key] = parsed[key].map(spArr => {
-              if (Array.isArray(spArr)) {
-                return spArr.map(d => ({ ...buildDefaults(sec), ...d, _enabled: true }));
-              }
-              return [buildDefaults(sec)];
-            });
-          }
-        } else if (sec.perSpecies) {
-          if (Array.isArray(parsed[key])) {
-            state[key] = parsed[key].map((d, i) => {
-              return { ...buildDefaults(sec), ...d };
-            });
-          }
-        } else {
-          state[key] = { ...buildDefaults(sec), ...parsed[key] };
-          // An optional section (ext_force, ascent) present in the loaded file must
-          // be marked enabled, or buildDefaults' _enabled:false would make the
-          // generator drop the block on the next download.
-          if (sec.enabled === false) state[key]._enabled = true;
-        }
+      const make = data => {
+        const defaults = buildDefaults(sec, dim);
+        if (!useEditorDefaults) Object.assign(defaults, { _present: [], _indices: {}, _included: false });
+        if (data) Object.assign(defaults, data);
+        if (useEditorDefaults) { delete defaults._present; delete defaults._indices; delete defaults._included; }
+        if (data && sec.enabled === false) defaults._enabled = true;
+        return defaults;
+      };
+      if (sec.multiPerSpecies) replacement[key] = (parsed[key] || []).map(blocks => (blocks || []).map(make));
+      else if (sec.perSpecies) replacement[key] = (parsed[key] || []).map(make);
+      else replacement[key] = make(parsed[key]);
+    }
+    const count = parsed.particles?.n_species || parsed.species?.length || 1;
+    replacement.particles.n_species = count;
+    for (const [key, sec] of Object.entries(SCHEMA)) if (sec.perSpecies) {
+      for (let sp = 0; sp < count; sp++) {
+        if (!replacement[key][sp]) replacement[key][sp] = sec.multiPerSpecies ? [] : { ...buildDefaults(sec, dim), _present: [], _indices: {}, _included: false };
       }
     }
-
-    // Ensure species arrays match num_species
-    const count = state.particles?.num_species || 1;
-    ensureSpeciesArrays(count);
-
+    state = replacement;
+    currentDim = dim;
+    currentBuild = parsed._build || currentBuild;
+    dimDropdown?.setValue(String(currentDim));
+    buildDropdown?.setValue(currentBuild);
+    activeInjectorIdx = Array(count).fill(0);
+    activeSpeciesIdx = {};
+    for (const [key, sec] of Object.entries(SCHEMA)) if (sec.perSpecies) activeSpeciesIdx[key] = 0;
+    lastMeaningfulBoxsize = (state.grid_space.box_size || []).map(Number);
     buildSections();
     loadStateToUI();
     setActiveSection(activeSection);
-    for (const [k, s] of Object.entries(SCHEMA)) {
-      if (s.perSpecies) rebuildSpeciesTabs(k);
-    }
-    const parsedExtF = parsed.ext_force;
-    turbKAuto = !(parsedExtF && (parsedExtF.kmin !== undefined || parsedExtF.kmax !== undefined));
+    for (const [key, sec] of Object.entries(SCHEMA)) if (sec.perSpecies) rebuildSpeciesTabs(key);
+    turbKAuto = useEditorDefaults && !(parsed.ext_force && (parsed.ext_force.k_min !== undefined || parsed.ext_force.k_max !== undefined));
     if (turbKAuto) autoUpdateTurbK();
     updatePreview();
     renderTurbRampPlot();
     renderTurbForcePlot();
+    showLoadReport(source, parsed._report || []);
+  }
+
+  function showLoadReport(source, report, error = '') {
+    const panel = document.getElementById('load-report');
+    panel.hidden = false;
+    panel.classList.toggle('load-error', !!error);
+    if (error) { panel.textContent = `Could not load ${source}: ${error}`; return; }
+    const changes = report.filter(row => row.kind !== 'notice').length;
+    panel.innerHTML = `<strong>Loaded ${escapeHtml(source)}: ${changes} changes</strong>` +
+      (report.length ? `<details><summary>Show conversion details (${report.length})</summary><ul>${report.map(row => `<li>${escapeHtml(row.message)}</li>`).join('')}</ul></details>` : '<div>Current names; no conversion needed.</div>');
   }
 
   // ---- Presets ----
@@ -5133,66 +5166,14 @@
   }
 
   function applyPreset(preset) {
-    for (const [key, sec] of Object.entries(SCHEMA)) {
-      const blocks = sec.perSpecies ? (preset.values[key] || []).flat() : [preset.values[key]];
-      if (blocks.some(data => data && Object.keys(data).some(name => name.toLowerCase() === 'n_constants'))) {
-        toast(`Cannot load preset: ${key}.n_constants was removed. Remove it and retain only the active ct values before loading.`);
-        return;
-      }
+    try {
+      const parsed = parseSavedPreset(preset);
+      applyParsedState(parsed, preset.name, PRESETS.includes(preset));
+      toast(`Loaded preset: ${preset.name}`);
+    } catch (error) {
+      showLoadReport(preset.name, [], error.message);
+      toast('Cannot load preset: ' + error.message);
     }
-    // All saved injectors are enabled below; reject nonzero vboost before loading.
-    for (const injectors of preset.values.plasma_injector || []) {
-      if (Array.isArray(injectors) && injectors.some(d => d.vboost?.some(v => Number(v) !== 0))) {
-        toast('Cannot load preset: plasma_injector.vboost was removed with faux-shock injection.');
-        return;
-      }
-    }
-    currentDim = preset.dim || 2;
-    dimDropdown?.setValue(String(currentDim));
-    // Presets are build-agnostic (they set neither gpu_mem_frac nor spare_size),
-    // so keep the current build target unless the preset names one explicitly.
-    if (preset.build) {
-      currentBuild = preset.build;
-      buildDropdown?.setValue(currentBuild);
-    }
-    initState();
-
-    for (const [key, val] of Object.entries(preset.values)) {
-      const sec = SCHEMA[key];
-      if (!sec) continue;
-      if (sec.multiPerSpecies && Array.isArray(val)) {
-        for (let i = 0; i < val.length; i++) {
-          if (Array.isArray(val[i])) {
-            state[key][i] = val[i].map(d => {
-              const injector = { ...buildDefaults(sec), ...d, _enabled: true };
-              delete injector.vboost;
-              return injector;
-            });
-          }
-        }
-      } else if (sec.perSpecies && Array.isArray(val)) {
-        for (let i = 0; i < val.length; i++) {
-          state[key][i] = { ...state[key][i], ...val[i] };
-        }
-      } else if (!sec.perSpecies && typeof val === 'object' && !Array.isArray(val)) {
-        state[key] = { ...state[key], ...val };
-      }
-    }
-
-    ensureSpeciesArrays(getSpeciesCount());
-    buildSections();
-    loadStateToUI();
-    setActiveSection(activeSection);
-    for (const [k, s] of Object.entries(SCHEMA)) {
-      if (s.perSpecies) rebuildSpeciesTabs(k);
-    }
-    const presetExtF = preset.values?.ext_force;
-    turbKAuto = !(presetExtF && (presetExtF.kmin !== undefined || presetExtF.kmax !== undefined));
-    if (turbKAuto) autoUpdateTurbK();
-    updatePreview();
-    renderTurbRampPlot();
-    renderTurbForcePlot();
-    toast(`Loaded preset: ${preset.name}`);
   }
 
   function showPresetModal() { document.getElementById('preset-modal').classList.remove('hidden'); }
@@ -5216,13 +5197,13 @@
     return results;
   }
 
-  function bestDecompositionND(ncells, nprocs) {
-    const ndim = ncells.length;
+  function bestDecompositionND(n_cells, nprocs) {
+    const ndim = n_cells.length;
     if (nprocs < 1) return null;
 
     // 1D: trivial
     if (ndim === 1) {
-      const subAxes = [ncells[0] / nprocs];
+      const subAxes = [n_cells[0] / nprocs];
       return { nprocs, procAxes: [nprocs], subAxes, error: 0, normalizedError: 0 };
     }
 
@@ -5252,7 +5233,7 @@
 
     for (const factors of factorTuples) {
       for (const procAxes of getPermutations(factors)) {
-        const subAxes = ncells.map((nc, i) => nc / procAxes[i]);
+        const subAxes = n_cells.map((nc, i) => nc / procAxes[i]);
         const maxSub = Math.max(...subAxes);
         const minSub = Math.min(...subAxes);
         const error = maxSub - minSub;
@@ -5271,20 +5252,20 @@
   }
 
   function computeNodeRecommendations(targetPPP) {
-    const ncells = (state.grid_space?.ncells || []).slice(0, currentDim).map(v => parseInt(v) || 1);
+    const n_cells = (state.grid_space?.n_cells || []).slice(0, currentDim).map(v => parseInt(v) || 1);
     const numSpecies = getSpeciesCount();
     const ndim = currentDim;
 
     // Compute total particles per cell across all species
     let totalPPC = 0;
     for (let s = 0; s < numSpecies; s++) {
-      const numPar = (state.species?.[s]?.num_par || [4, 4, 4]).slice(0, ndim).map(v => parseInt(v) || 1);
+      const numPar = (state.species?.[s]?.ppc || [4, 4, 4]).slice(0, ndim).map(v => parseInt(v) || 1);
       let ppc = 1;
       for (let i = 0; i < ndim; i++) ppc *= numPar[i];
       totalPPC += ppc;
     }
 
-    const totalCells = ncells.reduce((a, b) => a * b, 1);
+    const totalCells = n_cells.reduce((a, b) => a * b, 1);
     const totalParticles = totalCells * totalPPC;
     const idealNprocs = totalParticles / targetPPP;
 
@@ -5294,7 +5275,7 @@
 
     const candidates = [];
     for (let nprocs = start; nprocs <= end; nprocs++) {
-      const dcmp = bestDecompositionND(ncells, nprocs);
+      const dcmp = bestDecompositionND(n_cells, nprocs);
       if (!dcmp) continue;
       const particlesPerProc = totalParticles / nprocs;
       const cellsPerProc = totalCells / nprocs;
@@ -5357,7 +5338,7 @@
       return;
     }
 
-    const axesLabel = 'node_number';
+    const axesLabel = 'ranks';
 
     let html = '';
     html += `<div class="node-opt-summary">`;
@@ -5368,7 +5349,7 @@
     html += `<table class="node-opt-table">`;
     html += `<thead><tr>`;
     html += `<th title="Total number of MPI processes">nprocs</th>`;
-    html += `<th title="Processes per dimension — set as node_number">${axesLabel}</th>`;
+    html += `<th title="Processes per dimension — set as ranks">${axesLabel}</th>`;
     html += `<th title="Grid cells per process (total). Hover rows for per-dimension breakdown.">cells/proc</th>`;
     html += `<th title="Estimated particles per process">particles/proc</th>`;
     html += `<th title="Squareness error (0 = perfectly balanced subdomains). Lower is better.">error</th>`;
@@ -5399,13 +5380,14 @@
       btn.addEventListener('click', () => {
         const axes = btn.dataset.procAxes.split(',').map(Number);
         // Update state
-        const nodeNumber = state.node_conf.node_number;
+        const nodeNumber = state.node_conf.ranks;
+        markPresent(state.node_conf, 'ranks');
         for (let i = 0; i < currentDim; i++) {
           if (i < axes.length) nodeNumber[i] = axes[i];
         }
         // Update UI inputs
         for (let i = 0; i < currentDim; i++) {
-          const input = document.querySelector(`[data-section="node_conf"][data-key="node_number"][data-index="${i}"]`);
+          const input = document.querySelector(`[data-section="node_conf"][data-key="ranks"][data-index="${i}"]`);
           if (input) input.value = axes[i];
         }
         updatePreview();
