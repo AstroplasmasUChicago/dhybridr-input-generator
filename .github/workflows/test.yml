@@ -8,5 +8,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Capacity, conversion, and registry/schema checks
-        run: node tests/import.test.cjs
+      - name: Capacity, conversion, schema, and preset checks
+        run: |
+          node tests/import.test.cjs
+          node tests/presets.test.cjs

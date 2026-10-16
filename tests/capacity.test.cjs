@@ -50,7 +50,7 @@ for(const preset of vm.runInContext('PRESETS',context)){
   app.applyPreset(preset);
   assert.equal(messages.at(-1),`Loaded preset: ${preset.name}`);
   const parsed=context.parseInputFile(context.generateInputFile(app.getState(),app.getDim(),app.getBuild()));
-  assert.deepEqual(plain(parsed.species[0].constants||[]),preset.name==='2D Alfven Wave'?[0.01,0.04908739]:[]);
+  assert.deepEqual(plain(parsed.species[0].constants||[]),plain(preset.values.species[0].constants||[]));
 }
 const species=Array.from({length:103},(_,i)=>({name:`ion${i+1}`,ct:[i,0]}));
 app.applyPreset({name:'103 species',dim:2,values:{particles:{num_species:103},species}});
