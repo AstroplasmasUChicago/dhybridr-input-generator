@@ -23,6 +23,39 @@ const puppeteer = require(process.env.PUPPETEER_MODULE || 'puppeteer');
       await (await page.$('#file-input')).uploadFile(file);
       await page.waitForFunction((name, success) => document.querySelector('#load-report').textContent.includes(`${success ? 'Loaded' : 'Could not load'} ${name}`), {}, name, success);
     }
+    async function changeBuild(build) {
+      await page.click('#build-select .cs-button');
+      await page.click(`#build-select .cs-option:nth-child(${build === 'CPU' ? 1 : 2})`);
+    }
+    const optimizerTarget = () => page.$eval('#node-optimizer-target-label', element => Number(element.textContent.replace(/\D/g, '')));
+    async function setOptimizerTarget(exponent) {
+      await page.$eval('#node-optimizer-slider', (element, exponent) => {
+        element.value = String(exponent);
+        element.dispatchEvent(new Event('input', {bubbles: true}));
+      }, exponent);
+    }
+    // CPU and GPU have distinct defaults and retain separate slider choices.
+    await page.click('#nav-list [data-section="node_conf"]');
+    assert.equal(await optimizerTarget(), 1e7);
+    await setOptimizerTarget(5);
+    await changeBuild('GPU');
+    assert.equal(await optimizerTarget(), 1e8);
+    await setOptimizerTarget(7);
+    await changeBuild('CPU');
+    assert.equal(await optimizerTarget(), 1e5);
+    await changeBuild('GPU');
+    assert.equal(await optimizerTarget(), 1e7);
+    await changeBuild('CPU');
+    // The closest-to-target recommendation remains visible and can be applied.
+    await load('optimizer.input', 'node_conf{ranks=1,1}grid_space{n_cells=64,64}species{ppc=4,4}');
+    await page.click('#nav-list [data-section="node_conf"]');
+    await setOptimizerTarget(4);
+    const recommended = '#node-optimizer-results .node-opt-recommended';
+    assert.equal(await page.$$eval(recommended, elements => elements.length), 1);
+    assert.equal(await page.$eval(`${recommended} td`, element => Number(element.textContent)), 7);
+    await page.click(`${recommended} .node-opt-apply`);
+    const axes = await page.$$eval('input[data-section="node_conf"][data-key="ranks"]', elements => elements.filter(element => Number(element.dataset.index) < 2).map(element => Number(element.value)));
+    assert.equal(axes.reduce((a, b) => a * b, 1), 7);
     await load('old.input', 'node_conf{node_number=1,1}particles{num_species=2}species{name="one",dist="iso",vth=0,ct=2,0,n_constants=2}plasma_injector{plane="yz"}species{name="two"}raw_diag{selectrule="vx>0"}');
     let output = await preview();
     assert.match(output, /u_shell=0/);
@@ -57,6 +90,7 @@ const puppeteer = require(process.env.PUPPETEER_MODULE || 'puppeteer');
     assert.match(output, /initial_bounds\(1:4\)=0.,1.,3.,4./);
     await changeDimension(3);
     assert.match(await preview(), /ranks\(1:3\)=1,1,1/);
+    assert.equal(await optimizerTarget(), 1e4);
     await load('sparse.input', 'node_conf{ranks=1,1}species{ppc(2)=3,initial_bounds(3)=4}');
     await changeDimension(3);
     output = await preview();
@@ -106,7 +140,7 @@ const puppeteer = require(process.env.PUPPETEER_MODULE || 'puppeteer');
     const withoutTimestamp = text => text.replace(/^!   Generated:.*$/m, '');
     assert.equal(withoutTimestamp(fs.readFileSync(path.join(directory, suggestedFilename), 'utf8')), withoutTimestamp(output));
     assert.deepEqual(errors, []);
-    console.log('PASS: browser load/report, conditional fields, failed/fresh loads, omitted array edit, injector creation, and download.');
+    console.log('PASS: browser optimizer targets/apply, load/report, conditional fields, failed/fresh loads, omitted array edit, injector creation, and download.');
   } finally {
     await browser.close();
     fs.rmSync(directory, {recursive: true, force: true});

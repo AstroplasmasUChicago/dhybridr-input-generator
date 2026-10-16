@@ -3,6 +3,8 @@
 (function() {
   let currentDim = 2;
   let currentBuild = 'CPU';  // 'CPU' or 'GPU': gates build-specific fields (gpu_memory_fraction vs buffer_headroom)
+  // Rounded from 1.024B particles / 102 CPU ranks or 12 Aurora GPU ranks (arXiv:2609.28422).
+  const nodeOptimizerTargets = { CPU: 10e6, GPU: 100e6 };
   let dimDropdown = null, buildDropdown = null;  // header custom dropdowns (see createDropdown)
   let state = {};       // { sectionKey: { field: value } } or { sectionKey: [ {field:value}, ... ] } for perSpecies
   let activeSection = 'node_conf';
@@ -531,16 +533,18 @@
       }
       // Insert node optimizer panel after node_conf fields
       if (skey === 'node_conf') {
+        const target = nodeOptimizerTargets[currentBuild];
         html += `<div id="node-optimizer-panel" class="node-optimizer-panel">`;
         html += `<div class="node-optimizer-header">MPI Rank Optimizer</div>`;
-        html += `<p class="node-optimizer-desc">Suggests MPI rank counts and subdomains with similar cell counts along each axis. `;
+        html += `<p class="node-optimizer-desc">Gives a rough MPI rank estimate and suggests subdomains with similar cell counts along each axis. `;
         html += `The particle estimate uses n_cells and each species' ppc, assuming the whole box is filled. `;
-        html += `Set the target particles per MPI rank.</p>`;
+        html += `The ${currentBuild} starting target is informed by scaling benchmarks. `;
+        html += `Adjust the target for your hardware and run.</p>`;
         html += `<div class="node-optimizer-body">`;
         html += `<div class="node-optimizer-input-row">`;
-        html += `<label>Target particles/rank:</label>`;
-        html += `<input type="range" id="node-optimizer-slider" min="4" max="8" step="0.1" value="6">`;
-        html += `<span id="node-optimizer-target-label" class="node-opt-target-label">1,000,000</span>`;
+        html += `<label>${currentBuild} target particles/rank:</label>`;
+        html += `<input type="range" id="node-optimizer-slider" min="4" max="${currentBuild === 'GPU' ? 9 : 8}" step="any" value="${Math.log10(target)}">`;
+        html += `<span id="node-optimizer-target-label" class="node-opt-target-label">${target.toLocaleString()}</span>`;
         html += `</div>`;
         html += `<div id="node-optimizer-results"></div>`;
         html += `</div>`;
@@ -1471,9 +1475,7 @@
 
   function onBuildChange(value) {
     currentBuild = value;
-    // Build target only changes which build-specific fields are shown/emitted
-    // (gpu_memory_fraction vs buffer_headroom); no array resizing needed. Rebuild the DOM so
-    // those fields appear/disappear, then repaint.
+    // Rebuild the fields and optimizer for this build; array sizes stay the same.
     buildSections();
     loadStateToUI();
     setActiveSection(activeSection);
@@ -5204,6 +5206,7 @@
     // 1D: trivial
     if (ndim === 1) {
       const subAxes = [n_cells[0] / nprocs];
+      if (Math.floor(subAxes[0]) < 4) return null;
       return { nprocs, procAxes: [nprocs], subAxes, error: 0, normalizedError: 0 };
     }
 
@@ -5234,6 +5237,8 @@
     for (const factors of factorTuples) {
       for (const procAxes of getPermutations(factors)) {
         const subAxes = n_cells.map((nc, i) => nc / procAxes[i]);
+        // The solver requires at least four local cells along every axis.
+        if (subAxes.some(n => Math.floor(n) < 4)) continue;
         const maxSub = Math.max(...subAxes);
         const minSub = Math.min(...subAxes);
         const error = maxSub - minSub;
@@ -5307,6 +5312,9 @@
       if (a.targetDelta !== b.targetDelta) return a.targetDelta - b.targetDelta;
       return a.idealDelta - b.idealDelta;
     }).slice(0, 5);
+    if (recommended && !squareSorted.includes(recommended)) {
+      squareSorted[squareSorted.length - 1] = recommended;
+    }
 
     return { totalParticles, idealNprocs, candidates: squareSorted, recommended };
   }
@@ -5324,17 +5332,18 @@
       slider.dataset.bound = '1';
       slider.addEventListener('input', () => {
         const val = Math.round(Math.pow(10, parseFloat(slider.value)));
+        nodeOptimizerTargets[currentBuild] = val;
         if (targetLabel) targetLabel.textContent = val.toLocaleString();
         renderNodeOptimizer();
       });
     }
 
-    const targetPPP = Math.round(Math.pow(10, parseFloat(slider.value)));
+    const targetPPP = nodeOptimizerTargets[currentBuild];
 
     const { totalParticles, idealNprocs, candidates, recommended } = computeNodeRecommendations(targetPPP);
 
     if (candidates.length === 0) {
-      resultsDiv.innerHTML = '<div class="node-opt-empty">Could not compute decompositions.</div>';
+      resultsDiv.innerHTML = '<div class="node-opt-empty">No nearby rank count leaves at least four cells per rank along every axis. Increase the particle target or grid size.</div>';
       return;
     }
 
@@ -5352,7 +5361,6 @@
     html += `<th title="MPI ranks per dimension">${axesLabel}</th>`;
     html += `<th title="Grid cells per MPI rank. Hover rows for counts along each axis.">cells/rank</th>`;
     html += `<th title="Estimated particles per MPI rank">particles/rank</th>`;
-    html += `<th title="Squareness error (0 = perfectly balanced subdomains). Lower is better.">error</th>`;
     html += `<th></th>`;
     html += `</tr></thead><tbody>`;
 
@@ -5367,7 +5375,6 @@
       html += `<td>${axes}</td>`;
       html += `<td title="${cellsPerDim} per dim">${Math.round(c.cellsPerProc).toLocaleString()}</td>`;
       html += `<td>${Math.round(c.particlesPerProc).toLocaleString()}</td>`;
-      html += `<td>${c.normalizedError.toFixed(3)}</td>`;
       html += `<td><button type="button" class="node-opt-apply" data-proc-axes="${c.procAxes.join(',')}">${isRec ? 'Apply' : 'Apply'}</button></td>`;
       html += `</tr>`;
     }
