@@ -685,11 +685,11 @@
   function buildPhaseHelp() {
     const rows = [
       ['x3x2x1', String.raw`Z_s n_s`],
-      ['x2x1', String.raw`\frac{|Z_s|}{L_3}\frac{dN_s}{dx_1\,dx_2}`],
-      ['u2u1', String.raw`\frac{|Z_s|}{L_1L_2L_3}\frac{dN_s}{du_1\,du_2}`],
-      ['u1x1', String.raw`\frac{|Z_s|}{L_2L_3}\frac{dN_s}{dx_1\,du_1}`],
-      ['utx1', String.raw`\frac{|Z_s|}{L_2L_3}\frac{dN_s}{dx_1\,du}`],
-      ['etx1', String.raw`\frac{|Z_s|}{L_2L_3}\frac{dN_s}{dx_1\,d\ln E_s}`],
+      ['x2x1', String.raw`|Z_s|\left\langle\frac{dN_s}{d^3x}\right\rangle_\perp`],
+      ['u2u1', String.raw`|Z_s|\left\langle\frac{dN_s}{d^3x\,du_1\,du_2}\right\rangle_\perp`],
+      ['u1x1', String.raw`|Z_s|\left\langle\frac{dN_s}{d^3x\,du_1}\right\rangle_\perp`],
+      ['utx1', String.raw`|Z_s|\left\langle\frac{dN_s}{d^3x\,du}\right\rangle_\perp`],
+      ['etx1', String.raw`|Z_s|\left\langle\frac{dN_s}{d^3x\,d\ln E_s}\right\rangle_\perp`],
     ];
     return `<div class="phase-help">
       <span class="name">phase_spaces <button type="button" class="phase-help-button"
@@ -700,14 +700,18 @@
         <p>${formatMathLabel(String.raw`$x_i$ is position, $\mathbf{u}=\gamma\mathbf{v}$ is proper velocity, $u=|\mathbf{u}|$, and $E_s$ is kinetic energy. $Z_s$ is the species charge number; $n_s$ is number density; $L_i$ is the box length.`)}</p>
         <p>${formatMathLabel(String.raw`$N_s$ is normalized particle number and $f_s$ is the number distribution:`)}</p>
         <div class="phase-help-equation">${formatMathLabel(String.raw`$dN_s=f_s(\mathbf{x},\mathbf{u})\,d^3x\,d^3u$`)}</div>
+        <p>Integrate over unshown velocity components at fixed position. For u1x1:</p>
+        <div class="phase-help-equation">${formatMathLabel(String.raw`$\displaystyle \frac{dN_s}{d^3x\,du_1}=\int f_s(\mathbf{x},\mathbf{u})\,du_2\,du_3$`)}</div>
+        <p>${formatMathLabel(String.raw`$\langle\cdot\rangle_\perp$ is the box average over spatial directions absent from the output: $x_3$ for x2x1; $x_2,x_3$ for u1x1, utx1, and etx1; the whole box for velocity-only outputs. For u1x1, for example:`)}</p>
+        <div class="phase-help-equation">${formatMathLabel(String.raw`$\displaystyle \langle g\rangle_\perp=\frac{1}{L_2L_3}\int g\,dx_2\,dx_3$`)}</div>
         <table>
           <caption>3D output normalization</caption>
           <thead><tr><th>Output</th><th>Distribution</th></tr></thead>
           <tbody>${rows.map(([name, tex]) => `<tr><td><code>${name}</code></td><td>${formatMathLabel('$\\displaystyle ' + tex + '$')}</td></tr>`).join('')}</tbody>
         </table>
-        <p>${formatMathLabel(String.raw`Two-axis outputs use $|Z_s|$ weights, average over omitted spatial directions, and integrate over the remaining velocities. Other output names permute the indices. Bins approximate these distributions.`)}</p>
-        <p>${formatMathLabel(String.raw`ut bins $u=|\mathbf{u}|$; et bins $\ln E_s$ (natural log), so $\frac{dN_s}{dx_1\,d\ln E_s}=E_s\frac{dN_s}{dx_1\,dE_s}$.`)}</p>
-        <p>${formatMathLabel(String.raw`In 2D, omit integration over $x_3$ and the factor $L_3$; in 1D, also omit $x_2$ and $L_2$. Keep all three velocity components.`)}</p>
+        <p>${formatMathLabel(String.raw`Two-axis outputs use $|Z_s|$ weights and integrate over the remaining velocities. Other output names permute the indices. Bins approximate these distributions.`)}</p>
+        <p>${formatMathLabel(String.raw`ut bins $u=|\mathbf{u}|$; et bins $\ln E_s$ (natural log), so $\frac{dN_s}{d^3x\,d\ln E_s}=E_s\frac{dN_s}{d^3x\,dE_s}$.`)}</p>
+        <p>${formatMathLabel(String.raw`In 2D or 1D, replace $d^3x$ with $d^2x$ or $dx_1$ and average only over simulated spatial directions. Keep all three velocity components.`)}</p>
       </div>
     </div>`;
   }

@@ -92,12 +92,30 @@ function generateInputFile(state, dim, build, {comments = true} = {}) {
   return lines.join('\n');
 }
 
+// Convert the inline math in schema hints to plain input-file comments.
+function formatInputComment(text) {
+  const symbols = {
+    delta: 'delta ', Delta: 'Delta ', gamma: 'gamma ', theta: 'theta ',
+    lambda: 'lambda ', pi: 'pi', leq: '<=', propto: ' proportional to ',
+    ln: 'ln', min: 'min', max: ' max',
+  };
+  return text.replace(/\$([^$]+)\$/g, (_, math) => math
+    .replace(/\\([A-Za-z]+)/g, (command, name) => symbols[name] ?? command)
+    .replace(/\\(?:mathbf|mathrm)\{([^{}]*)\}/g, '$1')
+    .replace(/\\_/g, '_')
+    .replace(/\\,/g, ' ')
+    .replace(/\s+_/g, '_')
+    .replace(/_\{([^{}]+)\}/g, (_, subscript) => subscript.includes(',') ? `_(${subscript.trim()})` : `_${subscript.trim()}`)
+    .replace(/\^\{([^{}]+)\}/g, (_, exponent) => `^(${exponent.trim()})`)
+    .replace(/\s+/g, ' ').trim());
+}
+
 function formatSection(sec, skey, data, dim, build, state, comments, speciesNum, injectorNum) {
   const lines = [];
   // Section name mapping: namelist nl_X reads input section X
   const sectionName = sec.namelist.replace('nl_', '');
   if (comments) {
-    let comment = sec.label;
+    let comment = formatInputComment(sec.label);
     if (speciesNum) comment += ` (Species ${speciesNum}`;
     if (injectorNum) comment += `, #${injectorNum}`;
     if (speciesNum) comment += ')';
@@ -140,7 +158,7 @@ function formatSection(sec, skey, data, dim, build, state, comments, speciesNum,
     const formatted = formatValue(field, val, dim);
     if (formatted === null) continue;
 
-    const hint = comments && field.hint ? `  ! ${field.hint}` : '';
+    const hint = comments && field.hint ? `  ! ${formatInputComment(field.hint)}` : '';
     lines.push(`\t${formatted},${hint}`);
   }
 
