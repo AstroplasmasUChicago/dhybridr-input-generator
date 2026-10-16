@@ -151,6 +151,8 @@ function convertInputSections(sections, options = {}) {
     if (legacyCounts.length > 1) throw new Error(`${section.context}: duplicate n_constants.`);
     for (const assignment of section.assignments) {
       const old = assignment.name.toLowerCase(), where = `${section.context}, line ${assignment.line}`;
+      const splitElectronDump = section.name === 'field_diag' && old === 'dmp_pefld';
+      if (splitElectronDump && section.assignments.some(a => a.name.toLowerCase() === 'dump_te')) throw new Error(`${where}: dmp_pefld conflicts with dump_Te; it controls both electron dumps.`);
       if (old === 'n_constants' && ['species','ext_emf','raw_diag'].includes(section.name)) continue;
       let target;
       if (old === 'vth' && ['species','plasma_injector'].includes(section.name)) {
@@ -172,7 +174,7 @@ function convertInputSections(sections, options = {}) {
       if (destinations.has(dest) && destinations.get(dest) !== source) throw new Error(`${where}: conflicting spellings target ${target.section}.${field.key}.`);
       destinations.set(dest, source);
       const moved = target.section !== section.name;
-      if (moved || old !== field.key.toLowerCase()) report.push({ kind: moved ? 'move' : 'rename', message: `${where}: ${assignment.name} -> ${moved ? target.section + '.' : ''}${field.key}` });
+      if (moved || old !== field.key.toLowerCase()) report.push({ kind: moved ? 'move' : 'rename', message: `${where}: ${assignment.name} -> ${moved ? target.section + '.' : ''}${field.key}${splitElectronDump ? ', dump_Te' : ''}` });
       let values;
       try { values = splitInputValues(assignment.raw); } catch (error) { throw new Error(`${where}, ${assignment.name}: ${error.message}`); }
       if (!values.length) throw new Error(`${where}: ${assignment.name} requires a value.`);
@@ -230,6 +232,10 @@ function convertInputSections(sections, options = {}) {
         data[field.key] = field.key === 'phase_spaces' || field.quotedList ? converted.join(',') : converted[0];
       }
       if (!data._present.includes(field.key)) data._present.push(field.key);
+      if (splitElectronDump) {
+        data.dump_Te = data.dump_Pe;
+        data._present.push('dump_Te');
+      }
       if (old === 'selectrule' && !/^1(?:\.0*)?$/.test(String(data[field.key]).trim())) report.push({ kind: 'notice', message: `${where}: raw filter now combines with bounds, speed and sampling.` });
     }
     const data = blockFor(section.name, section.species, section.injector);

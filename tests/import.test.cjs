@@ -38,6 +38,25 @@ for(const [distribution,key]of Object.entries(registry.thermal)){
 assert.equal(round('fluid_electrons{Te="2.5",gamma=1.4}').b.fluid_electrons.Ke,2.5);
 assert.equal(round('fluid_electrons{closure="evolved",Te="x+n",gamma_e=1.4}').b.fluid_electrons.Te,'x+n');
 assert.equal(round('grid_space{K=2.,gamma=1.5}').b.fluid_electrons.Ke,2);
+// Each current flag controls one output; the old combined flag preserves both.
+for (const enabled of [true,false]) {
+ const literal=enabled?'.true.':'.false.';
+ const {a,b}=round(`fluid_electrons{closure="evolved"}field_diag{dmp_pefld=${literal}}`);
+ assert.equal(b.field_diag.dump_Pe,enabled);assert.equal(b.field_diag.dump_Te,enabled);
+ assert.ok(a._report.some(r=>r.message.endsWith('dmp_pefld -> dump_Pe, dump_Te')));
+ const saved=c.parseSavedPreset({dim:2,values:{fluid_electrons:{closure:'evolved'},field_diag:{dmp_pefld:enabled}}});
+ assert.equal(saved.field_diag.dump_Pe,enabled);assert.equal(saved.field_diag.dump_Te,enabled);
+}
+for (const key of ['dump_Pe','dump_Te']) {
+ const other=key==='dump_Pe'?'dump_Te':'dump_Pe';
+ const {b,out}=round(`fluid_electrons{closure="evolved"}field_diag{${key}=.true.}`);
+ assert.equal(b.field_diag[key],true);assert.equal(b.field_diag[other],undefined);
+ assert.doesNotMatch(out,new RegExp(`${other}=`));
+ assert.throws(()=>c.parseInputFile(`fluid_electrons{closure="polytropic"}field_diag{${key}=.true.}`),/does not apply/);
+}
+for (const fields of ['dmp_pefld=.true.,dump_Te=.false.','dump_Te=.true.,dmp_pefld=.false.','dmp_pefld=.true.,dump_Pe=.true.']) assert.throws(()=>c.parseInputFile(`fluid_electrons{closure="evolved"}field_diag{${fields}}`),/conflict/);
+const independent=round('fluid_electrons{closure="evolved"}field_diag{dump_Pe=.false.,dump_Te=.true.}').b.field_diag;
+assert.equal(independent.dump_Pe,false);assert.equal(independent.dump_Te,true);
 for(const text of ['grid_space{K=2.} fluid_electrons{Ke=2.}','fluid_electrons{Ke=1,Te="1."}','fluid_electrons{closure="evolved",Ke=2.}','grid_space{gamma=1.4}fluid_electrons{closure="evolved"}','species{num_par=2,ppc=2}','species{ppc(1)=2,ppc(1)=2}','mystery{x=1}','species{mystery=1}','species{vboost=0}','species{}plasma_injector{vboost=0}','algorithm{resistivity=0}','species{}raw_diag{n_constants=2,ct=1}','species{name="unterminated}','species{name="x" stray}','raw_diag{enabled=.true.}','particles{n_species=2}species{}','species{distribution="shell"}','species{u_drift_profile="x","","z"}'])assert.throws(()=>c.parseInputFile(text),undefined,text);
 const quoted=round(`species{name="ct(1) ! { } say ""yes""",number_density='if(constants(1)!=0,1.,0.)',constants=0}`);
 assert.equal(quoted.b.species[0].name,'ct(1) ! { } say "yes"');

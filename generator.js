@@ -1,7 +1,7 @@
 // Generate dHybridR Fortran namelist input file from form state
 
 // A field with `requires` exists only while another section's key has the given
-// value (kappa and dump_Pe belong to the evolved electron closure); the code
+// value (kappa, dump_Pe and dump_Te require the evolved electron closure); the code
 // rejects it otherwise, so it is neither shown nor emitted.
 function fieldRequirementMet(field, state, speciesIndex) {
   if (field.distribution) {

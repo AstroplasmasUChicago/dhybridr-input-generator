@@ -123,6 +123,8 @@
         state[key] = buildDefaults(sec);
       }
     }
+    // New inputs use evolved electrons; imports keep the solver's polytropic default.
+    state.fluid_electrons.closure = 'evolved';
   }
 
   function buildDefaults(sec, dim = currentDim) {
@@ -456,15 +458,15 @@
         html += `</div>`;
         html += `<canvas id="e-field-canvas"></canvas><div id="e-field-plot-msg"></div></div>`;
       }
-      // Insert u_drift_profile velocity plot after the Velocity group in species section
-      if (skey === 'species' && group.title.startsWith('Velocity')) {
+      // Insert the proper-velocity plot after the drift-profile controls.
+      if (skey === 'species' && group.keys.includes('u_drift_profile')) {
         html += `<div id="u_drift_profile-plot">`;
         html += `<div id="u_drift_profile-controls">`;
         html += `<label>Field: <select id="u_drift_profile-component">`;
-        html += `<option value="mag" selected>|v|</option>`;
-        html += `<option value="vx">vx</option>`;
-        html += `<option value="vy">vy</option>`;
-        html += `<option value="vz">vz</option>`;
+        html += `<option value="mag" selected>|u|</option>`;
+        html += `<option value="vx">ux</option>`;
+        html += `<option value="vy">uy</option>`;
+        html += `<option value="vz">uz</option>`;
         html += `</select></label>`;
         html += ` <span class="plot-3d-controls"${currentDim === 3 ? '' : ' style="display:none"'}>`;
         html += `<label>Slice: <select id="u_drift_profile-slice-axis">`;
@@ -530,13 +532,13 @@
       // Insert node optimizer panel after node_conf fields
       if (skey === 'node_conf') {
         html += `<div id="node-optimizer-panel" class="node-optimizer-panel">`;
-        html += `<div class="node-optimizer-header">Node Optimizer</div>`;
-        html += `<p class="node-optimizer-desc">Finds MPI decompositions that balance subdomain sizes across processors. `;
-        html += `Enter the desired particles per processor — the optimizer estimates total particles from n_cells, n_species, and ppc, `;
-        html += `then searches for nearby processor counts with the most square (balanced) domain decomposition.</p>`;
+        html += `<div class="node-optimizer-header">MPI Rank Optimizer</div>`;
+        html += `<p class="node-optimizer-desc">Suggests MPI rank counts and subdomains with similar cell counts along each axis. `;
+        html += `The particle estimate uses n_cells and each species' ppc, assuming the whole box is filled. `;
+        html += `Set the target particles per MPI rank.</p>`;
         html += `<div class="node-optimizer-body">`;
         html += `<div class="node-optimizer-input-row">`;
-        html += `<label>Target particles/proc:</label>`;
+        html += `<label>Target particles/rank:</label>`;
         html += `<input type="range" id="node-optimizer-slider" min="4" max="8" step="0.1" value="6">`;
         html += `<span id="node-optimizer-target-label" class="node-opt-target-label">1,000,000</span>`;
         html += `</div>`;
@@ -622,9 +624,11 @@
     }
 
     const fparserBtn = field.fparser
-      ? ` <span class="fparser-help" tabindex="0" title="Function parser syntax&#10;&#10;Variables: x, y, z` +
-        (field.key === 'filter' ? `, vx, vy, vz (v)` : '') +
-        `&#10;Constants: constants(1), constants(2), ... from the supplied list; pi&#10;&#10;Functions:&#10;  abs, sin, cos, tan, htan (tanh)&#10;  hsec (sech), exp, log, tenlog (log10)&#10;  sqrt, asin, acos, atan, atan2&#10;  pow(a,b), not(a), neg(a)&#10;&#10;Operators: + - * / ^ **&#10;Logic: && || == != >= <= > <&#10;Conditional: if(cond, true, false)">?</span>`
+      ? ` <span class="fparser-help" tabindex="0" title="Function parser syntax&#10;&#10;Variables: ${['x', 'y', 'z'].slice(0, currentDim).join(', ')}` +
+        (field.key === 'filter' ? `, vx, vy, vz (ordinary velocity)` : '') +
+        (skey === 'fluid_electrons' && field.key === 'Te' ? `, n (electron number density)` : '') +
+        (SCHEMA[skey].fields.some(f => f.key === 'constants') ? `&#10;Constants: constants(1), constants(2), ... from this section's list` : '') +
+        `&#10;Use a numeric value for pi.&#10;&#10;Functions:&#10;  abs, sin, cos, tan, htan, tanh&#10;  hsec (sech), exp, log (ln), tenlog (log10)&#10;  sqrt, asin, acos, atan, atan2&#10;  pow(a,b), not(a), neg(a)&#10;&#10;Operators: + - * / ^&#10;Logic: && || == != >= <= > <&#10;Conditional: if(cond, true, false)">?</span>`
       : '';
 
     return `<div class="field-row ${dimClass}${field.locked ? ' field-row-locked' : ''}">
@@ -651,7 +655,7 @@
         if (field.options) {
           html += `<select ${dataAttr} data-index="${i}">`;
           for (const opt of field.options) {
-            html += `<option value="${opt}">${opt}</option>`;
+            html += `<option value="${opt}">${field.optionLabels?.[opt] ?? opt}</option>`;
           }
           html += `</select>`;
         } else {
@@ -1387,7 +1391,8 @@
           if (field.type === 'bool') {
             el.checked = !!val[i];
           } else {
-            el.value = field.options?.find(option => option.toLowerCase() === String(val[i]).toLowerCase()) ?? val[i] ?? '';
+            const value = field.optionAliases?.[String(val[i]).toLowerCase()] ?? val[i];
+            el.value = field.options?.find(option => option.toLowerCase() === String(value).toLowerCase()) ?? value ?? '';
           }
         }
       } else if (field.phaseCheckboxes) {
@@ -2518,7 +2523,7 @@
     ctx.translate(12, marginTop + plotH / 2);
     ctx.rotate(-Math.PI / 2);
     ctx.textAlign = 'center';
-    ctx.fillText('RMS / mode_amp', 0, 0);
+    ctx.fillText('Unprojected RMS / mode_amp', 0, 0);
     ctx.restore();
 
     // Status text below plot
@@ -3663,7 +3668,7 @@
       canvas.width = 0;
       canvas.height = 0;
       const vd = u_drift.map(v => Number(v) || 0);
-      msgEl.textContent = 'Uniform velocity (γ*v): u_drift = [' + vd.join(', ') + ']';
+      msgEl.textContent = 'Uniform proper velocity (u = γv): u_drift = [' + vd.join(', ') + ']';
       msgEl.style.display = '';
       const c3d = container.querySelector('.plot-3d-controls');
       if (c3d) c3d.style.display = 'none';
@@ -3695,7 +3700,7 @@
       evalBody = 'var _vx=(' + compExprs[0] + '),_vy=(' + compExprs[1] + '),_vz=(' + compExprs[2] + '); return Math.sqrt(_vx*_vx+_vy*_vy+_vz*_vz);';
     }
 
-    const compLabel = comp === 'mag' ? '|v|' : comp;
+    const compLabel = comp === 'mag' ? '|u|' : comp.replace('v', 'u');
 
     if (currentDim === 1) {
       // --- 1D line plot ---
@@ -3797,7 +3802,7 @@
         ctx.clearRect(0, 0, canvasW, canvasH);
         canvas.width = 0;
         canvas.height = 0;
-        msgEl.textContent = 'Cannot evaluate velocity (γ*v) expression';
+        msgEl.textContent = 'Cannot evaluate proper-velocity expression';
         msgEl.style.display = '';
       }
       return;
@@ -3956,7 +3961,7 @@
       ctx.clearRect(0, 0, canvasW, canvasH);
       canvas.width = 0;
       canvas.height = 0;
-      msgEl.textContent = 'Cannot evaluate velocity expression';
+      msgEl.textContent = 'Cannot evaluate proper-velocity expression';
       msgEl.style.display = '';
     }
   }
@@ -4401,7 +4406,7 @@
     const fieldFlags = [
       { on: !!dmpVfld[0], name: '|v|',      count: 1 },
       { on: !!dmpVfld[1], name: 'v\u20d7',  count: 3 },
-      { on: !!dmpPfld[0], name: 'P trace',  count: 1 },
+      { on: !!dmpPfld[0], name: 'trace(P)/3', count: 1 },
       { on: !!dmpPfld[1], name: 'P tensor', count: 6 },
     ].filter(f => f.on);
 
@@ -4598,7 +4603,7 @@
       const avg = Math.round(((Number(u_bins[0]) || 512) + (Number(u_bins[1]) || 512) + (Number(u_bins[2]) || 512)) / 3);
       return { size: avg, label: '|u|' };
     }
-    if (tok === 'et') return { size: 256, label: 'et' };
+    if (tok === 'et') return { size: 256, label: 'ln(E)' };
     return { size: 0, label: tok };
   }
 
@@ -4646,8 +4651,8 @@
       }
       if (!niterDisabled && n_steps <= 0) warnings.push(`n_steps = ${n_steps} — must be > 0`);
       if (!tendDisabled && t_end <= 0) warnings.push(`t_end = ${t_end} — must be > 0`);
-      if (!niterDisabled && stiter >= n_steps && stiter > 0) {
-        warnings.push(`stiter (${stiter}) ≥ n_steps (${n_steps}) — simulation will never start`);
+      if (stiter !== 0) {
+        warnings.push('stiter must be 0; use a restart file to resume a run.');
       }
     }
 
@@ -4658,13 +4663,14 @@
       const ndumpSet = dump_every > 0;
       const tdumpSet = !isNaN(dump_dt) && dump_dt > 0;
 
-      if (n_steps > 0 && ndumpSet && dump_every > n_steps) warnings.push(`dump_every (${dump_every}) > n_steps (${n_steps}) — no diagnostics will be written`);
-      if (ndumpSet && tdumpSet) warnings.push('Both dump_every and dump_dt are set — the code will refuse to start. Set one to -1');
-      if (!ndumpSet && !tdumpSet) warnings.push('Both dump_every and dump_dt are disabled — no diagnostics will be written');
+      if (state.global_output?.dump_grid) {
+        if (n_steps > 0 && ndumpSet && !tdumpSet && dump_every > n_steps) warnings.push(`dump_every (${dump_every}) > n_steps (${n_steps}): only the initial output selected by dump_grid is scheduled`);
+        if (ndumpSet && tdumpSet) warnings.push('dump_grid requires either dump_every or dump_dt. Set the unused cadence to -1.');
+        if (!ndumpSet && !tdumpSet) warnings.push('dump_grid is enabled but has no cadence. Set dump_every or dump_dt; otherwise the run aborts.');
+      }
     }
 
     if (skey === 'raw_diag') {
-      const dump_every = Number(state.global_output?.dump_every) || 0;
       const spIdx = activeSpeciesIdx['raw_diag'] || 0;
       const data = state.raw_diag?.[spIdx];
       const rawNdump = Number(data?.dump_every) || 0;
@@ -4672,25 +4678,19 @@
       const rawNdumpSet = rawNdump > 0;
       const rawTdumpSet = !isNaN(rawTdump) && rawTdump > 0;
 
-      if (rawNdumpSet && rawTdumpSet) warnings.push('Both dump_every and dump_dt are set — the code will refuse to start. Set one to -1');
-      if (dump_every > 0 && rawNdumpSet && rawNdump % dump_every !== 0) {
-        warnings.push(`dump_every (${rawNdump}) must be a multiple of dump_every (${dump_every})`);
-      }
+      if (data?.enabled) {
+        if (rawNdumpSet && rawTdumpSet) warnings.push('Raw output requires either dump_every or dump_dt. Set the unused cadence to -1.');
+        if (!rawNdumpSet && !rawTdumpSet) warnings.push('Raw output is enabled but has no cadence. Set dump_every or dump_dt; otherwise the run aborts.');
 
-      // bounds: the code treats -1 as "whole box" only when every value is -1,
-      // and an inverted box selects nothing (no raw file, no message).
-      const rv = data?.bounds || [];
-      const rvVals = [];
-      for (let i = 0; i < currentDim * 2; i++) rvVals.push(Number(rv[i] ?? -1));
-      if (!rvVals.every(v => v === -1)) {
-        if (rvVals.some(v => v === -1)) {
-          warnings.push('bounds: -1 only means "whole box" when every value is -1. Set all the values.');
-        } else {
-          const axes = ['x', 'y', 'z'];
-          for (let a = 0; a < currentDim; a++) {
-            if (rvVals[2*a] >= rvVals[2*a+1]) {
-              warnings.push(`bounds: ${axes[a]} min (${rvVals[2*a]}) >= max (${rvVals[2*a+1]}): no particles selected, no raw file written`);
-            }
+        // The UI pairs bounds by axis; each -1 uses the corresponding box edge.
+        const rv = data.bounds || [];
+        const axes = ['x', 'y', 'z'];
+        for (let a = 0; a < currentDim; a++) {
+          const lower = Number(rv[2*a] ?? -1), upper = Number(rv[2*a+1] ?? -1);
+          const lo = lower === -1 ? 0 : lower;
+          const hi = upper === -1 ? Number(state.grid_space?.box_size?.[a]) : upper;
+          if (lo >= hi) {
+            warnings.push(`bounds: ${axes[a]} min (${lo}) >= max (${hi}): the run aborts`);
           }
         }
       }
@@ -4735,7 +4735,7 @@
       }
     }
 
-    // initial_bounds: -1 is honoured per value, but an inverted box places no particles.
+    // Species bounds must contain grid cells after the solver snaps them to faces.
     if (skey === 'species') {
       const specs = state.species || [];
       const axes = ['x', 'y', 'z'];
@@ -4744,7 +4744,7 @@
         for (let a = 0; a < currentDim; a++) {
           const lo = Number(db[2*a] ?? -1), hi = Number(db[2*a+1] ?? -1);
           if (lo !== -1 && hi !== -1 && lo >= hi) {
-            warnings.push(`Species ${i+1}: initial_bounds ${axes[a]} min (${lo}) >= max (${hi}): no particles placed`);
+            warnings.push(`Species ${i+1}: check initial_bounds on ${axes[a]}: min (${lo}) >= max (${hi}). The run rejects intervals with no grid cells after snapping.`);
           }
         }
       }
@@ -4806,8 +4806,8 @@
       const hintEl = ppInput.closest('.field-row')?.querySelector('.hint');
       if (hintEl) {
         hintEl.textContent = planeMax > 0
-          ? `Position along ${planeAxis} axis (0 … ${planeMax})`
-          : `Position along ${planeAxis} axis`;
+          ? `Fixed ${planeAxis} coordinate (0 … ${planeMax}), rounded down to a cell boundary`
+          : `Fixed ${planeAxis} coordinate, rounded down to a cell boundary`;
       }
     }
 
@@ -4846,7 +4846,7 @@
         const bdHint = fieldRow?.querySelector('.hint');
         if (bdHint) {
           const axDesc = bdAxes.map(a => a.max > 0 ? `${a.label}: 0…${a.max}` : a.label).join(', ');
-          bdHint.textContent = `In-plane bounds (${axDesc})`;
+          bdHint.textContent = `Bounds along the plane (${axDesc}); lower ends snap down and upper ends up to grid faces`;
         }
       }
     }
@@ -5343,15 +5343,15 @@
     let html = '';
     html += `<div class="node-opt-summary">`;
     html += `<span>Total particles: <strong>${totalParticles.toLocaleString()}</strong></span>`;
-    html += `<span>Ideal nprocs: <strong>${idealNprocs.toFixed(1)}</strong></span>`;
+    html += `<span>Estimated MPI ranks: <strong>${idealNprocs.toFixed(1)}</strong></span>`;
     html += `</div>`;
 
     html += `<table class="node-opt-table">`;
     html += `<thead><tr>`;
-    html += `<th title="Total number of MPI processes">nprocs</th>`;
-    html += `<th title="Processes per dimension — set as ranks">${axesLabel}</th>`;
-    html += `<th title="Grid cells per process (total). Hover rows for per-dimension breakdown.">cells/proc</th>`;
-    html += `<th title="Estimated particles per process">particles/proc</th>`;
+    html += `<th title="Total number of MPI ranks">Total ranks</th>`;
+    html += `<th title="MPI ranks per dimension">${axesLabel}</th>`;
+    html += `<th title="Grid cells per MPI rank. Hover rows for counts along each axis.">cells/rank</th>`;
+    html += `<th title="Estimated particles per MPI rank">particles/rank</th>`;
     html += `<th title="Squareness error (0 = perfectly balanced subdomains). Lower is better.">error</th>`;
     html += `<th></th>`;
     html += `</tr></thead><tbody>`;

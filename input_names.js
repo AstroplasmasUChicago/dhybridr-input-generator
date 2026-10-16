@@ -437,11 +437,15 @@ const INPUT_NAMES = {
     },
     {
       "section": "plasma_injector",
-      "name": "inward_hemisphere",
+      "name": "hemisphere",
       "old": [
         {
           "section": "plasma_injector",
           "name": "halfsphere"
+        },
+        {
+          "section": "plasma_injector",
+          "name": "inward_hemisphere"
         }
       ]
     },
@@ -796,9 +800,15 @@ const INPUT_NAMES = {
       "old": [
         {
           "section": "field_diag",
-          "name": "dmp_pefld"
+          "name": "dmp_pefld",
+          "message": "Use field_diag.dump_Pe and field_diag.dump_Te to select the outputs separately."
         }
       ]
+    },
+    {
+      "section": "field_diag",
+      "name": "dump_Te",
+      "old": []
     },
     {
       "section": "diag_species",
