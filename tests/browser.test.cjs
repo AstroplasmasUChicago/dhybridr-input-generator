@@ -104,6 +104,20 @@ const puppeteer = require(process.env.PUPPETEER_MODULE || 'puppeteer');
     output = await preview();
     assert.match(output, /ppc\(1:3\)=4,3,4/);
     assert.match(output, /initial_bounds\(1:6\)=-1.,-1.,-1.,4.,-1.,-1./);
+    // |u| bins use the truncated average; omitted components each use 512.
+    await load('bins.input', 'node_conf{ranks=1,1}grid_space{n_cells=8,8}species{}diag_species{phase_spaces="utx1",x_bins=8,8,u_bins=2,2,4}');
+    await page.click('#nav-list [data-section="diag_species"]');
+    assert.match(await page.$eval('.diag-size-panel', element => element.textContent), /2 × 8/);
+    const binInput = '[data-section="diag_species"][data-key="u_bins"][data-index="0"]';
+    for (const value of [0, -1, 2]) {
+      await page.$eval(binInput, (element, value) => { element.value = String(value); element.dispatchEvent(new Event('input', {bubbles: true})); }, value);
+      assert.equal(await page.$eval('#btn-generate', element => element.disabled), value < 1);
+      if (value < 1) assert.match(await preview(), /u_bins must be at least 1/);
+    }
+    await load('partial-bins.input', 'node_conf{ranks=1,1}grid_space{n_cells=8,8}species{}diag_species{phase_spaces="utx1",x_bins=8,8,u_bins(2)=2}');
+    await page.click('#nav-list [data-section="diag_species"]');
+    assert.match(await page.$eval('.diag-size-panel', element => element.textContent), /342 × 8/);
+    assert.match(await preview(), /u_bins\(2\)=2/);
     await load('electrons.input', 'fluid_electrons{closure="polytropic",Ke=2,gamma_e=1.4}species{}');
     await page.click('#nav-list [data-section="fluid_electrons"]');
     async function closure(value) {

@@ -39,7 +39,7 @@ assert.deepEqual(plain(context.parseInputFile(output).ext_emf.constants), precis
 const appSource = fs.readFileSync(path.join(repo,'app.js'),'utf8').replace('  // ---- Go ----', `
   buildSections = loadStateToUI = setActiveSection = rebuildSpeciesTabs = autoUpdateTurbK = renderTurbRampPlot = renderTurbForcePlot = () => {};
   toast = message => messages.push(message); updatePreview = () => {};
-  globalThis.testApp = { applyPreset, applyParsedState, initState, translateExpr, getState: () => state, getDim: () => currentDim, getBuild: () => currentBuild };
+  globalThis.testApp = { applyPreset, applyParsedState, initState, translateExpr, calcPhaseSpaceSize, resolveAxisSize, getState: () => state, getDim: () => currentDim, getBuild: () => currentBuild };
   // ---- Go ----`);
 vm.runInContext(appSource,context,{filename:'app.js'});
 const app=context.testApp;

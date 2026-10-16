@@ -427,7 +427,7 @@ const SCHEMA = {
           { name: 'etx3',   minDim: 3, group: 'ln(E) vs Position' },
         ] },
       { key: 'u_bins', label: 'u_bins', type: 'int', dim: 'VDIM',
-        default: [512,512,512], hint: 'Bins per proper-velocity component; |u| uses their average and ln(E) uses 256 bins. 0 selects the component default',
+        default: [512,512,512], min: 1, hint: 'Positive bins per proper-velocity component; omitted components use 512. |u| uses their average rounded down; ln(E) uses 256 bins',
         dimLabels: ['u1','u2','u3'] },
       { key: 'x_bins', label: 'x_bins', type: 'int', dim: 'DIM',
         default: [256,256,256], hint: 'Histogram bins per spatial dimension; each must be at least 1',

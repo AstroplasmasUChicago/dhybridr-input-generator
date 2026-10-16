@@ -209,6 +209,7 @@ function convertInputSections(sections, options = {}) {
         const number = Number(value.replace(/d/gi, 'e'));
         if (!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eEdD][+-]?\d+)?$/.test(value) || !Number.isFinite(number) || (field.type === 'int' && !Number.isInteger(number))) throw new Error(`${where}: invalid ${field.type} for ${field.key}.`);
         if (quoted && !(field.key === 'Ke' && old === 'te')) throw new Error(`${where}: ${field.key} must be numeric, without quotes.`);
+        if (field.min !== undefined && number < field.min) throw new Error(`${where}: ${field.key} must be at least ${field.min}.`);
         return number;
       });
       const listed = field.key === 'phase_spaces' || field.quotedList;

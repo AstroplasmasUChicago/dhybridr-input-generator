@@ -4598,11 +4598,11 @@
       const v = Math.min(Number(x_bins[2]) || 256, Number(n_cells[2]) || 128);
       return { size: v, label: 'x3' };
     }
-    if (tok === 'u1') return { size: Number(u_bins[0]) || 512, label: 'u1' };
-    if (tok === 'u2') return { size: Number(u_bins[1]) || 512, label: 'u2' };
-    if (tok === 'u3') return { size: Number(u_bins[2]) || 512, label: 'u3' };
+    if (tok === 'u1') return { size: Number(u_bins[0] ?? 512), label: 'u1' };
+    if (tok === 'u2') return { size: Number(u_bins[1] ?? 512), label: 'u2' };
+    if (tok === 'u3') return { size: Number(u_bins[2] ?? 512), label: 'u3' };
     if (tok === 'ut') {
-      const avg = Math.round(((Number(u_bins[0]) || 512) + (Number(u_bins[1]) || 512) + (Number(u_bins[2]) || 512)) / 3);
+      const avg = Math.trunc((Number(u_bins[0] ?? 512) + Number(u_bins[1] ?? 512) + Number(u_bins[2] ?? 512)) / 3);
       return { size: avg, label: '|u|' };
     }
     if (tok === 'et') return { size: 256, label: 'ln(E)' };

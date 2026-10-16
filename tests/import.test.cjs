@@ -6,6 +6,26 @@ const round=text=>{const a=c.parseInputFile(text);const out=c.generateInputFile(
 const registryFields = registry.keys.map(entry => `${entry.section}.${entry.name.toLowerCase()}`).sort();
 const schemaFields = Object.entries(schema).flatMap(([section, definition]) => definition.fields.map(field => `${section}.${field.key.toLowerCase()}`)).sort();
 assert.deepEqual(plain(registryFields), plain(schemaFields), 'registry and schema must declare the same current interface');
+// Explicit zero and negative bins fail; omitted components retain the 512-bin default.
+for (const key of ['u_bins', 'pres']) {
+ for (const value of [0, -1]) {
+  assert.throws(() => c.parseInputFile(`species{}diag_species{${key}(2)=${value}}`), /u_bins must be at least 1/);
+  assert.throws(() => c.parseSavedPreset({dim:2,values:{species:[{}],diag_species:[{[key]:[2,value,4]}]}}), /u_bins must be at least 1/);
+ }
+}
+for (const value of [0, -1]) assert.throws(() => c.generateInputFile({species:[{}],diag_species:[{u_bins:[2,value,4]}]},2,'CPU'), /u_bins must be at least 1/);
+const partialBins = round('species{}diag_species{u_bins(2)=2}');
+assert.deepEqual(plain(partialBins.b.diag_species[0]._indices.u_bins), [2]);
+assert.match(partialBins.out, /u_bins\(2\)=2/);
+const bins = partialBins.b.diag_species[0].u_bins;
+assert.equal(app.resolveAxisSize('u1', [], bins, []).size, 512);
+assert.equal(app.resolveAxisSize('u2', [], bins, []).size, 2);
+assert.equal(app.resolveAxisSize('u3', [], bins, []).size, 512);
+assert.equal(app.resolveAxisSize('ut', [], bins, []).size, 342);
+assert.equal(app.resolveAxisSize('ut', [], [], []).size, 512);
+assert.equal(app.calcPhaseSpaceSize('utx1', [8,8], [2,2,4], [8,8]).cells, 16);
+assert.equal(app.resolveAxisSize('u3', [], [2,2,4], []).size, 4);
+assert.equal(app.resolveAxisSize('et', [], [2,2,4], []).size, 256);
 // Removed boundary parameters are rejected in input files and saved presets.
 for (const [key, value] of [['vsh', 0], ['compress_ratio', 1]]) {
  assert.equal(schema.boundary_conditions.fields.some(field => field.key === key), false);

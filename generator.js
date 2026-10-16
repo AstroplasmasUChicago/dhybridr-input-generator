@@ -133,6 +133,7 @@ function formatSection(sec, skey, data, dim, build, state, speciesNum, injectorN
 }
 
 function formatValue(field, val, dim) {
+  if (field.min !== undefined && (Array.isArray(val) ? val : [val]).some(value => Number(value) < field.min)) throw new Error(`${field.key} must be at least ${field.min}.`);
   if (field.dim === 'VARIABLE') {
     const values = parseConstantValues(val.join(','));
     if (values.length === 0) return null;
