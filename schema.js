@@ -356,8 +356,6 @@ const SCHEMA = {
         options: ['per','reflect','open'],
         hint: 'Particle boundaries in x-low, x-high, y-low, y-high, z-low, z-high order: per = periodic, reflect = reverse normal velocity, open = remove escaping particles',
         dimLabels: ['x\u2097','x\u1d63','y\u2097','y\u1d63','z\u2097','z\u1d63'] },
-      { key: 'vsh', label: 'vsh', type: 'real', dim: 0, default: 0, hint: 'Unused by the supported particle boundaries; keep 0' },
-      { key: 'compress_ratio', label: 'compress_ratio', type: 'real', dim: 0, default: 1.0, hint: 'Unused by the supported particle boundaries; keep 1' },
     ]
   },
 

@@ -6,6 +6,18 @@ const round=text=>{const a=c.parseInputFile(text);const out=c.generateInputFile(
 const registryFields = registry.keys.map(entry => `${entry.section}.${entry.name.toLowerCase()}`).sort();
 const schemaFields = Object.entries(schema).flatMap(([section, definition]) => definition.fields.map(field => `${section}.${field.key.toLowerCase()}`)).sort();
 assert.deepEqual(plain(registryFields), plain(schemaFields), 'registry and schema must declare the same current interface');
+// Removed boundary parameters are rejected in input files and saved presets.
+for (const [key, value] of [['vsh', 0], ['compress_ratio', 1]]) {
+ assert.equal(schema.boundary_conditions.fields.some(field => field.key === key), false);
+ const removed = new RegExp(`${key} was removed`, 'i');
+ for (const spelling of [key, key.toUpperCase()]) assert.throws(() => c.parseInputFile(`species{}boundary_conditions{${spelling}=${value}}`), removed);
+ assert.throws(() => c.parseSavedPreset({dim:2,values:{species:[{}],boundary_conditions:[{[key]:value}]}}), removed);
+}
+for (const boundary of ['per', 'reflect', 'open']) {
+ const {b,out} = round(`species{}boundary_conditions{boundary_types="${boundary}","${boundary}","${boundary}","${boundary}"}`);
+ assert.deepEqual(plain(b.boundary_conditions[0].boundary_types), Array(4).fill(boundary));
+ assert.doesNotMatch(out, /\bvsh\b|\bcompress_ratio\b/);
+}
 // Every ordinary historical assignment maps to its current schema field.
 let mappings=0;
 for(const entry of registry.keys)for(const old of entry.old){

@@ -17,6 +17,8 @@ const puppeteer = require(process.env.PUPPETEER_MODULE || 'puppeteer');
     await page.goto(pathToFileURL(path.resolve(__dirname, '../index.html')).href, {waitUntil: 'domcontentloaded'});
     await page.waitForSelector('#preview-text');
     const preview = () => page.$eval('#preview-text', element => element.textContent);
+    assert.equal(await page.$('[data-section="boundary_conditions"][data-key="vsh"], [data-section="boundary_conditions"][data-key="compress_ratio"]'), null);
+    assert.doesNotMatch(await preview(), /\bvsh\b|\bcompress_ratio\b/);
     async function load(name, text, success = true) {
       const file = path.join(directory, name);
       fs.writeFileSync(file, text);
@@ -66,6 +68,12 @@ const puppeteer = require(process.env.PUPPETEER_MODULE || 'puppeteer');
     assert.equal(await page.$eval('select[data-section="species"][data-key="distribution"]', element => element.value), 'ISO');
     await load('bad.input', 'species{vboost=0}', false);
     assert.equal(await preview(), output);
+    // Rejected boundary inputs leave the previous input unchanged.
+    for (const [key, value] of [['vsh', 0], ['compress_ratio', 1]]) {
+      await load(`${key}.input`, `species{}boundary_conditions{${key}=${value}}`, false);
+      assert.match(await page.$eval('#load-report', element => element.textContent), new RegExp(`${key} was removed`));
+      assert.equal(await preview(), output);
+    }
     await load('small.input', 'species{name="small"}');
     output = await preview();
     assert.doesNotMatch(output, /plasma_injector|raw_diag|u_th|ppc/);

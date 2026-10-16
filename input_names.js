@@ -341,16 +341,6 @@ const INPUT_NAMES = {
       ]
     },
     {
-      "section": "boundary_conditions",
-      "name": "vsh",
-      "old": []
-    },
-    {
-      "section": "boundary_conditions",
-      "name": "compress_ratio",
-      "old": []
-    },
-    {
       "section": "plasma_injector",
       "name": "plane",
       "old": []
@@ -1158,6 +1148,16 @@ const INPUT_NAMES = {
       "section": "boundary_conditions",
       "name": "vth",
       "message": "The thermal-bath particle boundary was removed."
+    },
+    {
+      "section": "boundary_conditions",
+      "name": "vsh",
+      "message": "The faux-shock particle boundary was removed; this parameter has no effect on supported boundaries."
+    },
+    {
+      "section": "boundary_conditions",
+      "name": "compress_ratio",
+      "message": "The faux-shock particle boundary was removed; this parameter has no effect on supported boundaries."
     },
     {
       "section": "algorithm",
