@@ -43,11 +43,6 @@ const INPUT_NAMES = {
       "old": []
     },
     {
-      "section": "time",
-      "name": "stiter",
-      "old": []
-    },
-    {
       "section": "grid_space",
       "name": "n_cells",
       "old": [
@@ -1135,6 +1130,11 @@ const INPUT_NAMES = {
     "ptx3": "utx3"
   },
   "removed": [
+    {
+      "section": "time",
+      "name": "stiter",
+      "message": "Remove stiter; use restart.do_restart with a restart file to resume a run."
+    },
     {
       "section": "time",
       "name": "adaptive_dt",

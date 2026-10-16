@@ -26,6 +26,14 @@ assert.equal(app.resolveAxisSize('ut', [], [], []).size, 512);
 assert.equal(app.calcPhaseSpaceSize('utx1', [8,8], [2,2,4], [8,8]).cells, 16);
 assert.equal(app.resolveAxisSize('u3', [], [2,2,4], []).size, 4);
 assert.equal(app.resolveAxisSize('et', [], [2,2,4], []).size, 256);
+// Deprecated starting iterations are rejected even when zero, including saved presets.
+for (const value of [0, 10, -1]) {
+ for (const key of ['stiter', 'STITER']) {
+  assert.throws(() => c.parseInputFile(`time{${key}=${value}}`), /stiter was removed/i);
+  assert.throws(() => c.parseSavedPreset({dim:2,values:{time:{[key]:value}}}), /stiter was removed/i);
+ }
+}
+assert.doesNotMatch(round('time{dt=0.01,n_steps=10}').out, /\bstiter\b/i);
 // Removed boundary parameters are rejected in input files and saved presets.
 for (const [key, value] of [['vsh', 0], ['compress_ratio', 1]]) {
  assert.equal(schema.boundary_conditions.fields.some(field => field.key === key), false);
@@ -197,3 +205,20 @@ console.log('PASS: old saved bimaxwellian parallel scale, complete profiles, exa
 const sparseSaved = c.parseInputFile('species{}diag_species{phase_spaces(2)="utx1"}');
 const sparseReloaded = c.parseSavedPreset({dim:2,values:plain(sparseSaved)});
 assert.deepEqual(plain(sparseReloaded.diag_species[0]._indices.phase_spaces),[2]);
+
+// Hiding generated comments preserves quoted exclamation marks and every assignment.
+const commentInput = c.parseInputFile(`particles{n_species=1}
+species{name='ions! "test"',number_density="if(x!=0,1.,0.)"}
+plasma_injector{ppc=2,2}
+diag_species{phase_spaces(2)="utx1"}`);
+for (const build of ['CPU', 'GPU']) {
+ const commented = c.generateInputFile(commentInput, 2, build);
+ const uncommented = c.generateInputFile(commentInput, 2, build, {comments:false});
+ assert.match(commented, /^!.*generated/m);
+ assert.match(commented, /!.*Species 1/);
+ assert.equal(c.maskNamelistText(uncommented), uncommented);
+ assert.match(uncommented, /name="ions! ""test"""/);
+ assert.match(uncommented, /number_density="if\(x!=0,1\.,0\.\)"/);
+ assert.deepEqual(plain(c.parseInputFile(uncommented)), plain(c.parseInputFile(commented)));
+}
+console.log('PASS: comment-free generation preserves assignments and quoted exclamation marks.');

@@ -8,6 +8,7 @@
   let dimDropdown = null, buildDropdown = null;  // header custom dropdowns (see createDropdown)
   let state = {};       // { sectionKey: { field: value } } or { sectionKey: [ {field:value}, ... ] } for perSpecies
   let activeSection = 'node_conf';
+  let showComments = true;
   let activeSpeciesIdx = {};  // { sectionKey: speciesIndex }
   let lastMeaningfulBoxsize = [0, 0, 0]; // tracks last non-zero box_size for injector snapping
   let turbKAuto = true; // when true, ext_force k_min/k_max track box_size (4π/Lx, 6π/Lx)
@@ -56,6 +57,10 @@
     overlay.addEventListener('click', closeMobileMenu);
     document.getElementById('btn-generate').addEventListener('click', onGenerate);
     document.getElementById('btn-copy').addEventListener('click', onCopy);
+    document.getElementById('preview-comments').addEventListener('change', event => {
+      showComments = event.target.checked;
+      updatePreview();
+    });
     document.getElementById('btn-load').addEventListener('click', () => document.getElementById('file-input').click());
     document.getElementById('file-input').addEventListener('change', onFileLoad);
     document.getElementById('btn-preset').addEventListener('click', () => showPresetModal());
@@ -67,6 +72,9 @@
     buildPresetList();
     enforceIntegerFields();
     initSearch();
+    window.addEventListener('resize', () => {
+      document.querySelector('.phase-help-panel:popover-open')?.hidePopover();
+    });
   }
 
   // ---- Integer enforcement ----
@@ -278,6 +286,7 @@
       div.innerHTML = buildSectionHTML(item, sec);
       container.appendChild(div);
       bindSectionInputs(div, item, sec);
+      if (item === 'species') bindVspPlotControls(div);
       // Bind colormap selector for ext_emf
       if (item === 'ext_emf') {
         const cmapSel = div.querySelector('#b-field-cmap');
@@ -365,7 +374,7 @@
       html += ` <span class="tag disabled-tag">Disabled</span>`;
     }
     html += `</h2>`;
-    html += `<p class="section-desc">${sec.desc}</p>`;
+    html += `<p class="section-desc">${formatMathLabel(sec.desc, false)}</p>`;
 
     // Optional toggle — rendered as a prominent banner so it isn't mistaken for a regular field
     // For multiPerSpecies sections, the toggle is rendered per-species inside the section body
@@ -434,10 +443,10 @@
     for (const group of groups) {
       html += `<div class="field-group">`;
       if (group.title) {
-        html += `<div class="field-group-title">${group.title}</div>`;
+        html += `<div class="field-group-title">${formatMathLabel(group.title)}</div>`;
       }
       if (group.desc) {
-        html += `<div class="field-group-desc">${group.desc}</div>`;
+        html += `<div class="field-group-desc">${formatMathLabel(group.desc)}</div>`;
       }
       for (const fkey of group.keys) {
         const field = sec.fields.find(f => f.key === fkey);
@@ -477,10 +486,10 @@
         html += `<div id="u_drift_profile-plot">`;
         html += `<div id="u_drift_profile-controls">`;
         html += `<label>Field: <select id="u_drift_profile-component">`;
-        html += `<option value="mag" selected>$|u|$</option>`;
-        html += `<option value="vx">$u_x$</option>`;
-        html += `<option value="vy">$u_y$</option>`;
-        html += `<option value="vz">$u_z$</option>`;
+        html += `<option value="mag" selected>$|\\mathbf{u}(\\mathbf{x})|$</option>`;
+        html += `<option value="vx">$u_x(\\mathbf{x})$</option>`;
+        html += `<option value="vy">$u_y(\\mathbf{x})$</option>`;
+        html += `<option value="vz">$u_z(\\mathbf{x})$</option>`;
         html += `</select></label>`;
         html += ` <span class="plot-3d-controls"${currentDim === 3 ? '' : ' style="display:none"'}>`;
         html += `<label>Slice: <select id="u_drift_profile-slice-axis">`;
@@ -616,7 +625,7 @@
       const checkedAttr = isLocked && forcedVal ? ' checked' : '';
       inputHTML = `<div class="checkbox-row">
         <input type="checkbox" ${dataAttr}${checkedAttr}${lockAttr}>
-        <span>${field.hint || ''}</span>
+        <span>${formatMathLabel(field.hint || '')}</span>
       </div>`;
     } else if (field.options && field.type !== 'strarr') {
       inputHTML = `<select ${dataAttr}${lockAttr}>`;
@@ -652,21 +661,80 @@
 
     return `<div class="field-row ${dimClass}${field.locked ? ' field-row-locked' : ''}">
       <div class="field-label">
-        <span class="name">${field.label}${fparserBtn}</span>
-        <span class="hint">${field.required || field.required_if ? 'Required when applicable. ' : ''}${field.hint || ''}</span>
+        ${skey === 'diag_species' && field.key === 'phase_spaces' ? buildPhaseHelp() : `<span class="name">${field.label}${fparserBtn}</span>`}
+        <span class="hint">${field.required || field.required_if ? 'Required when applicable. ' : ''}${formatMathLabel(field.hint || '')}</span>
       </div>
       <div class="field-input">${extraHTML}${inputHTML}</div>
     </div>`;
   }
 
-  function formatMathLabel(label) {
+  function formatMathLabel(label, escapeText = true) {
     return label.split(/(\$[^$]+\$)/g).map(part => {
-      if (!part.startsWith('$')) return escapeHtml(part);
+      if (!part.startsWith('$')) return escapeText ? escapeHtml(part) : part;
       const tex = part.slice(1, -1);
       const content = typeof katex !== 'undefined'
         ? katex.renderToString(tex, {throwOnError: false}) : escapeHtml(tex);
       return `<span data-tex="${escapeHtml(tex)}">${content}</span>`;
     }).join('');
+  }
+
+  function formatTexNumber(value) {
+    return String(value).replace(/e([+-]?\d+)$/i, (_, exponent) => `\\times 10^{${Number(exponent)}}`);
+  }
+
+  function buildPhaseHelp() {
+    const rows = [
+      ['x3x2x1', String.raw`Z_s n_s`],
+      ['x2x1', String.raw`\frac{|Z_s|}{L_3}\frac{dN_s}{dx_1\,dx_2}`],
+      ['u2u1', String.raw`\frac{|Z_s|}{L_1L_2L_3}\frac{dN_s}{du_1\,du_2}`],
+      ['u1x1', String.raw`\frac{|Z_s|}{L_2L_3}\frac{dN_s}{dx_1\,du_1}`],
+      ['utx1', String.raw`\frac{|Z_s|}{L_2L_3}\frac{dN_s}{dx_1\,du}`],
+      ['etx1', String.raw`\frac{|Z_s|}{L_2L_3}\frac{dN_s}{dx_1\,d\ln E_s}`],
+    ];
+    return `<div class="phase-help">
+      <span class="name">phase_spaces <button type="button" class="phase-help-button"
+        aria-label="Phase-space definitions and normalization" aria-describedby="phase-help-tooltip">?</button></span>
+      <div id="phase-help-tooltip" class="phase-help-panel" popover="auto" role="tooltip" tabindex="0">
+        <strong>Phase-space definitions</strong>
+        <p>All formulae use normalized (code) units.</p>
+        <p>${formatMathLabel(String.raw`$x_i$ is position, $\mathbf{u}=\gamma\mathbf{v}$ is proper velocity, $u=|\mathbf{u}|$, and $E_s$ is kinetic energy. $Z_s$ is the species charge number; $n_s$ is number density; $L_i$ is the box length.`)}</p>
+        <p>${formatMathLabel(String.raw`$N_s$ is normalized particle number and $f_s$ is the number distribution:`)}</p>
+        <div class="phase-help-equation">${formatMathLabel(String.raw`$dN_s=f_s(\mathbf{x},\mathbf{u})\,d^3x\,d^3u$`)}</div>
+        <table>
+          <caption>3D output normalization</caption>
+          <thead><tr><th>Output</th><th>Distribution</th></tr></thead>
+          <tbody>${rows.map(([name, tex]) => `<tr><td><code>${name}</code></td><td>${formatMathLabel('$\\displaystyle ' + tex + '$')}</td></tr>`).join('')}</tbody>
+        </table>
+        <p>${formatMathLabel(String.raw`Two-axis outputs use $|Z_s|$ weights, average over omitted spatial directions, and integrate over the remaining velocities. Other output names permute the indices. Bins approximate these distributions.`)}</p>
+        <p>${formatMathLabel(String.raw`ut bins $u=|\mathbf{u}|$; et bins $\ln E_s$ (natural log), so $\frac{dN_s}{dx_1\,d\ln E_s}=E_s\frac{dN_s}{dx_1\,dE_s}$.`)}</p>
+        <p>${formatMathLabel(String.raw`In 2D, omit integration over $x_3$ and the factor $L_3$; in 1D, also omit $x_2$ and $L_2$. Keep all three velocity components.`)}</p>
+      </div>
+    </div>`;
+  }
+
+  function bindPhaseHelp(container) {
+    const help = container.querySelector('.phase-help');
+    if (!help) return;
+    const button = help.querySelector('button');
+    const panel = help.querySelector('[popover]');
+    const show = () => {
+      if (!panel.matches(':popover-open')) panel.showPopover();
+      const anchor = button.getBoundingClientRect();
+      const bounds = panel.getBoundingClientRect();
+      panel.style.left = Math.max(8, Math.min(anchor.left, innerWidth - bounds.width - 8)) + 'px';
+      panel.style.top = Math.max(8, Math.min(anchor.bottom, innerHeight - bounds.height - 8)) + 'px';
+    };
+    button.addEventListener('mouseenter', show);
+    button.addEventListener('click', show);
+    button.addEventListener('focus', event => {
+      if (!panel.contains(event.relatedTarget)) show();
+    });
+    help.addEventListener('mouseleave', () => {
+      if (!help.contains(document.activeElement)) panel.hidePopover();
+    });
+    help.addEventListener('focusout', event => {
+      if (!help.contains(event.relatedTarget)) panel.hidePopover();
+    });
   }
 
   function buildArrayInput(skey, field, arrSize, speciesIdx) {
@@ -741,7 +809,7 @@
       const anyVisible = opts.some(o => o.minDim <= currentDim);
       const groupHidden = anyVisible ? '' : 'dim-hidden';
       html += `<div class="phase-group ${groupHidden}">`;
-      html += `<div class="phase-group-label">${groupName}</div>`;
+      html += `<div class="phase-group-label">${formatMathLabel(groupName)}</div>`;
       html += `<div class="phase-group-items">`;
       for (const opt of opts) {
         // minDim 0 or 1 = always visible; 2 = needs DIM>=2; 3 = needs DIM>=3
@@ -875,32 +943,7 @@
       }
       debouncedRenderNspPlot();
 
-      // Bind u_drift_profile velocity plot controls
-      const vspCompSel = container.querySelector('#u_drift_profile-component');
-      if (vspCompSel) {
-        vspCompSel.value = selectedVspComponent;
-        vspCompSel.addEventListener('change', () => {
-          selectedVspComponent = vspCompSel.value;
-          renderVspPlot();
-        });
-      }
-      const vspSliceAxisSel = container.querySelector('#u_drift_profile-slice-axis');
-      if (vspSliceAxisSel) {
-        vspSliceAxisSel.value = String(vspSliceAxis);
-        vspSliceAxisSel.addEventListener('change', () => {
-          vspSliceAxis = parseInt(vspSliceAxisSel.value);
-          renderVspPlot();
-        });
-      }
-      const vspSlicePosRange = container.querySelector('#u_drift_profile-slice-pos');
-      if (vspSlicePosRange) {
-        vspSlicePosRange.value = String(vspSlicePos);
-        vspSlicePosRange.addEventListener('input', () => {
-          vspSlicePos = parseFloat(vspSlicePosRange.value);
-          renderVspPlot();
-        });
-      }
-      debouncedRenderVspPlot();
+      bindVspPlotControls(container);
     }
   }
 
@@ -1026,6 +1069,7 @@
 
   // ---- Bind inputs ----
   function bindSectionInputs(container, skey, sec, speciesIdx) {
+    bindPhaseHelp(container);
     container.querySelectorAll('input, select, textarea').forEach(el => {
       const elSection = el.dataset.section;
       const elKey = el.dataset.key;
@@ -1874,7 +1918,7 @@
 
     // Build the formula display
     let html = `<div class="dt-formula-content">`;
-    html += `<span class="dt-formula-label">CFL limit:</span>`;
+    html += `<span class="dt-formula-label">${formatMathLabel('particle-CFL limit for $v_{\\max} = c$:')}</span>`;
     html += `<span class="dt-formula-inline"><span class="dt-formula-tex" id="dt-formula-tex"></span>`;
     html += ` <span class="dt-formula-eq">= ${dtStr}</span>`;
     html += `</span>`;
@@ -1885,11 +1929,11 @@
     const texEl = document.getElementById('dt-formula-tex');
     let invTerms;
     if (currentDim === 1) {
-      invTerms = String.raw`\frac{1}{\Delta x^2}`;
+      invTerms = String.raw`1/\Delta x^2`;
     } else if (currentDim === 2) {
-      invTerms = String.raw`\frac{1}{\Delta x^2} + \frac{1}{\Delta y^2}`;
+      invTerms = String.raw`1/\Delta x^2 + 1/\Delta y^2`;
     } else {
-      invTerms = String.raw`\frac{1}{\Delta x^2} + \frac{1}{\Delta y^2} + \frac{1}{\Delta z^2}`;
+      invTerms = String.raw`1/\Delta x^2 + 1/\Delta y^2 + 1/\Delta z^2`;
     }
     const texFormula = String.raw`\Delta t \leq \frac{C_{\max}}{c\,\sqrt{${invTerms}}} \quad (C_{\max} = ${safetyFactor})`;
 
@@ -1920,33 +1964,16 @@
     const bzIsNum = !isNaN(bzNum) && isFinite(bzNum) && String(bzNum) !== '' && bz.match(/^[+-]?(\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?$/);
 
     let html = `<div class="dt-formula-content">`;
-    html += `<span class="dt-formula-label">|B| magnitude:</span>`;
+    html += `<span class="dt-formula-label">${formatMathLabel('$|\\mathbf{B}|$ magnitude:')}</span>`;
 
+    let formula = String.raw`|\mathbf{B}| = \sqrt{B_x^2 + B_y^2 + B_z^2}`;
     if (bxIsNum && byIsNum && bzIsNum) {
       // All numeric — compute the result
       const mag = Math.sqrt(bxNum * bxNum + byNum * byNum + bzNum * bzNum);
       const magStr = mag === 0 ? '0' : mag.toPrecision(4);
-      html += `<span class="dt-formula-inline">`;
-      html += `<span class="dt-formula-eq">|B| = sqrt(${bx}\u00b2 + ${by}\u00b2 + ${bz}\u00b2) = ${magStr}</span>`;
-      html += `</span>`;
-    } else {
-      // At least one is a symbolic expression
-      const fmtTerm = (expr) => {
-        const num = parseFloat(expr);
-        if (!isNaN(num) && isFinite(num) && expr.match(/^[+-]?(\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?$/)) {
-          return String(num) + '\u00b2';
-        }
-        // Wrap in parens if it contains operators (except leading sign)
-        const inner = expr.replace(/^[+-]/, '');
-        if (/[+\-*/^]/.test(inner) || /\s/.test(inner)) {
-          return '(' + expr + ')\u00b2';
-        }
-        return expr + '\u00b2';
-      };
-      html += `<span class="dt-formula-inline">`;
-      html += `<span class="dt-formula-eq">|B| = sqrt(${fmtTerm(bx)} + ${fmtTerm(by)} + ${fmtTerm(bz)})</span>`;
-      html += `</span>`;
+      formula += ` = ${formatTexNumber(magStr)}`;
     }
+    html += `<span class="dt-formula-inline"><span class="dt-formula-eq">${formatMathLabel('$' + formula + '$')}</span></span>`;
     html += `</div>`;
     container.innerHTML = html;
 
@@ -2410,7 +2437,7 @@
       canvas.width = 0;
       canvas.height = 0;
       msgEl.style.display = '';
-      msgEl.textContent = 'Set t_decay > 0 to see ramp curve';
+      msgEl.innerHTML = formatMathLabel('Set $t_{\\mathrm{decay}} > 0$ to see ramp curve');
       return;
     }
 
@@ -2423,13 +2450,13 @@
     let tEndSource = '';
     if (isFinite(n_steps) && n_steps > 0 && isFinite(dt) && dt > 0) {
       tEnd = n_steps * dt;
-      tEndSource = 'n_steps*dt';
+      tEndSource = '$N_{\\mathrm{steps}}\\Delta t$';
     } else if (isFinite(t_end) && t_end > 0) {
       tEnd = t_end;
-      tEndSource = 't_end';
+      tEndSource = '$t_{\\mathrm{end}}$';
     } else {
       tEnd = 5 * tDecay;
-      tEndSource = '5*t_decay (default)';
+      tEndSource = '$5t_{\\mathrm{decay}}$ (default)';
     }
     if (!isFinite(tEnd) || tEnd <= 0) tEnd = 5 * tDecay;
 
@@ -2564,22 +2591,22 @@
     const yAtEnd = Math.sqrt(Math.max(0, 1 - Math.exp(-2 * tEnd / tDecay)));
     const lines = [];
     if (tEnd < tDecay) {
-      lines.push('Run ends before driver spins up (t_end < t_decay)');
+      lines.push('Run ends before driver spins up ($t_{\\mathrm{end}} < t_{\\mathrm{decay}}$)');
     } else if (tEnd < 3 * tDecay) {
       const pct = (yAtEnd * 100).toFixed(0);
       lines.push('Driver only reaches ' + pct + '% of stationary by run end');
     } else {
-      lines.push('Driver spun-up in first ~3*t_decay = ' + fmtNum(3 * tDecay) + ' time units');
+      lines.push('Driver spun-up in first $3t_{\\mathrm{decay}} = ' + formatTexNumber(fmtNum(3 * tDecay)) + '$ time units');
     }
     lines.push('x-range from ' + tEndSource + ' = ' + fmtNum(tEnd));
     if (isFinite(omega) && omega > 0) {
       const period = 2 * Math.PI / omega;
-      lines.push('Modes oscillate at omega = ' + fmtNum(omega) +
-        ' (period = ' + fmtNum(period) + '); envelope shape unchanged.');
+      lines.push('Modes oscillate at $\\omega = ' + formatTexNumber(fmtNum(omega)) +
+        '$ (period $T = ' + formatTexNumber(fmtNum(period)) + '$); envelope shape unchanged.');
     }
 
     msgEl.style.display = '';
-    msgEl.innerHTML = lines.map(escapeHtml).join('<br>');
+    msgEl.innerHTML = lines.map(line => formatMathLabel(line)).join('<br>');
   }
 
   let _turbRampPlotTimer = null;
@@ -2662,7 +2689,7 @@
       canvas.width = 0;
       canvas.height = 0;
       msgEl.style.display = '';
-      msgEl.textContent = 'Set grid_space.box_size (Lx, Ly) > 0 to see force preview';
+      msgEl.innerHTML = formatMathLabel('Set grid_space.box_size ($L_x, L_y > 0$) to see force preview');
       return;
     }
 
@@ -2673,7 +2700,7 @@
       canvas.width = 0;
       canvas.height = 0;
       msgEl.style.display = '';
-      msgEl.textContent = 'Set ext_force.k_min and k_max (0 ≤ k_min ≤ k_max) to see force preview';
+      msgEl.innerHTML = formatMathLabel('Set ext_force.k_min and k_max ($0 \\le k_{\\min} \\le k_{\\max}$) to see force preview');
       return;
     }
 
@@ -2928,7 +2955,7 @@
       return v.toPrecision(3);
     };
     const lines = [];
-    lines.push(nModes + ' k-modes in shell  (dkx = ' + fmtNum(dkx) + ', dky = ' + fmtNum(dky) + ')');
+    lines.push(nModes + ' $k$-modes in shell ($\\Delta k_x = ' + formatTexNumber(fmtNum(dkx)) + ', \\Delta k_y = ' + formatTexNumber(fmtNum(dky)) + '$)');
     let gridNote;
     if (ncells_x > 0 && ncells_y > 0) {
       gridNote = 'simulation grid is ' + ncells_x + '×' + ncells_y;
@@ -2936,14 +2963,14 @@
       gridNote = 'simulation grid not set';
     }
     if (currentDim === 3) {
-      lines.push('Showing kz=0 slice on a 64×64 preview grid (' + gridNote + ')');
-      lines.push('full 3D preview not implemented — only iz=0 modes summed at z=0');
+      lines.push('Showing $k_z=0$ slice on a 64×64 preview grid (' + gridNote + ')');
+      lines.push('Only $i_z=0$ modes are summed at $z=0$; the full 3D preview is not implemented');
     } else {
       lines.push('One stationary OU realization on a 64×64 preview grid (' + gridNote + ')');
     }
 
     msgEl.style.display = '';
-    msgEl.innerHTML = lines.map(escapeHtml).join('<br>');
+    msgEl.innerHTML = lines.map(line => formatMathLabel(line)).join('<br>');
   }
 
   let _turbForcePlotTimer = null;
@@ -2969,30 +2996,15 @@
     const ezIsNum = !isNaN(ezNum) && isFinite(ezNum) && String(ezNum) !== '' && ez.match(/^[+-]?(\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?$/);
 
     let html = `<div class="dt-formula-content">`;
-    html += `<span class="dt-formula-label">|E| magnitude:</span>`;
+    html += `<span class="dt-formula-label">${formatMathLabel('$|\\mathbf{E}|$ magnitude:')}</span>`;
 
+    let formula = String.raw`|\mathbf{E}| = \sqrt{E_x^2 + E_y^2 + E_z^2}`;
     if (exIsNum && eyIsNum && ezIsNum) {
       const mag = Math.sqrt(exNum * exNum + eyNum * eyNum + ezNum * ezNum);
       const magStr = mag === 0 ? '0' : mag.toPrecision(4);
-      html += `<span class="dt-formula-inline">`;
-      html += `<span class="dt-formula-eq">|E| = sqrt(${ex}\u00b2 + ${ey}\u00b2 + ${ez}\u00b2) = ${magStr}</span>`;
-      html += `</span>`;
-    } else {
-      const fmtTerm = (expr) => {
-        const num = parseFloat(expr);
-        if (!isNaN(num) && isFinite(num) && expr.match(/^[+-]?(\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?$/)) {
-          return String(num) + '\u00b2';
-        }
-        const inner = expr.replace(/^[+-]/, '');
-        if (/[+\-*/^]/.test(inner) || /\s/.test(inner)) {
-          return '(' + expr + ')\u00b2';
-        }
-        return expr + '\u00b2';
-      };
-      html += `<span class="dt-formula-inline">`;
-      html += `<span class="dt-formula-eq">|E| = sqrt(${fmtTerm(ex)} + ${fmtTerm(ey)} + ${fmtTerm(ez)})</span>`;
-      html += `</span>`;
+      formula += ` = ${formatTexNumber(magStr)}`;
     }
+    html += `<span class="dt-formula-inline"><span class="dt-formula-eq">${formatMathLabel('$' + formula + '$')}</span></span>`;
     html += `</div>`;
     container.innerHTML = html;
 
@@ -3676,6 +3688,28 @@
   let vspSlicePos = 0.5;
   let _vspPlotTimer = null;
 
+  function bindVspPlotControls(container) {
+    const compSel = container.querySelector('#u_drift_profile-component');
+    compSel.value = selectedVspComponent;
+    compSel.addEventListener('change', () => {
+      selectedVspComponent = compSel.value;
+      renderVspPlot();
+    });
+    const sliceAxisSel = container.querySelector('#u_drift_profile-slice-axis');
+    sliceAxisSel.value = String(vspSliceAxis);
+    sliceAxisSel.addEventListener('change', () => {
+      vspSliceAxis = parseInt(sliceAxisSel.value);
+      renderVspPlot();
+    });
+    const slicePosRange = container.querySelector('#u_drift_profile-slice-pos');
+    slicePosRange.value = String(vspSlicePos);
+    slicePosRange.addEventListener('input', () => {
+      vspSlicePos = parseFloat(slicePosRange.value);
+      renderVspPlot();
+    });
+    debouncedRenderVspPlot();
+  }
+
   function renderVspPlot() {
     const container = document.getElementById('u_drift_profile-plot');
     if (!container) return;
@@ -3702,7 +3736,7 @@
       canvas.width = 0;
       canvas.height = 0;
       const vd = u_drift.map(v => Number(v) || 0);
-      msgEl.textContent = 'Uniform proper velocity (u = γv): u_drift = [' + vd.join(', ') + ']';
+      msgEl.innerHTML = formatMathLabel('Uniform proper velocity ($\\mathbf{u} = \\gamma\\mathbf{v}$): $\\mathbf{u} = [' + vd.map(formatTexNumber).join(', ') + ']$');
       msgEl.style.display = '';
       const c3d = container.querySelector('.plot-3d-controls');
       if (c3d) c3d.style.display = 'none';
@@ -4438,10 +4472,10 @@
     const dmpVfld = Array.isArray(data.dump_bulk_velocity) ? data.dump_bulk_velocity : [false, false];
     const dmpPfld = Array.isArray(data.dump_pressure) ? data.dump_pressure : [false, false];
     const fieldFlags = [
-      { on: !!dmpVfld[0], name: '|v|',      count: 1 },
-      { on: !!dmpVfld[1], name: 'v\u20d7',  count: 3 },
-      { on: !!dmpPfld[0], name: 'trace(P)/3', count: 1 },
-      { on: !!dmpPfld[1], name: 'P tensor', count: 6 },
+      { on: !!dmpVfld[0], name: '$|\\mathbf{v}|$', count: 1 },
+      { on: !!dmpVfld[1], name: '$\\mathbf{v}$', count: 3 },
+      { on: !!dmpPfld[0], name: '$\\operatorname{tr}(\\mathsf{P})/3$', count: 1 },
+      { on: !!dmpPfld[1], name: '$\\mathsf{P}$ tensor', count: 6 },
     ].filter(f => f.on);
 
     let panel = container.querySelector('.diag-size-panel');
@@ -4484,7 +4518,7 @@
     let html = `<div class="size-panel-header"><span class="size-icon">\ud83d\udcca</span> Estimated Output Size per Dump</div>`;
     for (const row of rows) {
       html += `<div class="size-row">`;
-      html += `<span><span class="size-name">${row.name}</span><span class="size-dims">${row.dims}</span></span>`;
+      html += `<span><span class="size-name">${formatMathLabel(row.name)}</span><span class="size-dims">${row.dims}</span></span>`;
       html += `<span class="size-value">${formatBytes(row.bytes)}</span>`;
       html += `</div>`;
     }
@@ -4522,16 +4556,16 @@
     const bfld = Array.isArray(data.dump_B) ? data.dump_B : [false, false, false, false];
     const jfld = Array.isArray(data.dump_J) ? data.dump_J : [false, false];
     const flags = [
-      { on: !!efld[0], name: 'Self |E|',   count: 1 },
-      { on: !!efld[1], name: 'Self E\u20d7',  count: 3 },
-      { on: !!efld[2], name: 'Total |E|',  count: 1 },
-      { on: !!efld[3], name: 'Total E\u20d7', count: 3 },
-      { on: !!bfld[0], name: 'Self |B|',   count: 1 },
-      { on: !!bfld[1], name: 'Self B\u20d7',  count: 3 },
-      { on: !!bfld[2], name: 'Total |B|',  count: 1 },
-      { on: !!bfld[3], name: 'Total B\u20d7', count: 3 },
-      { on: !!jfld[0], name: '|J|',        count: 1 },
-      { on: !!jfld[1], name: 'J\u20d7',    count: 3 },
+      { on: !!efld[0], name: 'Self $|\\mathbf{E}|$', count: 1 },
+      { on: !!efld[1], name: 'Self $\\mathbf{E}$', count: 3 },
+      { on: !!efld[2], name: 'Total $|\\mathbf{E}|$', count: 1 },
+      { on: !!efld[3], name: 'Total $\\mathbf{E}$', count: 3 },
+      { on: !!bfld[0], name: 'Self $|\\mathbf{B}|$', count: 1 },
+      { on: !!bfld[1], name: 'Self $\\mathbf{B}$', count: 3 },
+      { on: !!bfld[2], name: 'Total $|\\mathbf{B}|$', count: 1 },
+      { on: !!bfld[3], name: 'Total $\\mathbf{B}$', count: 3 },
+      { on: !!jfld[0], name: '$|\\mathbf{J}|$', count: 1 },
+      { on: !!jfld[1], name: '$\\mathbf{J}$', count: 3 },
     ].filter(f => f.on);
 
     let panel = container.querySelector('.diag-size-panel');
@@ -4560,7 +4594,7 @@
       totalBytes += bytes;
       const label = f.count > 1 ? `${f.name} (\u00d7${f.count})` : f.name;
       html += `<div class="size-row">`;
-      html += `<span><span class="size-name">${label}</span><span class="size-dims">${gridDimsStr}</span></span>`;
+      html += `<span><span class="size-name">${formatMathLabel(label)}</span><span class="size-dims">${gridDimsStr}</span></span>`;
       html += `<span class="size-value">${formatBytes(bytes)}</span>`;
       html += `</div>`;
     }
@@ -4672,7 +4706,6 @@
       const c = Number(state.time?.c) || 0;
       const n_steps = Number(state.time?.n_steps ?? -1);
       const t_end = parseFloat(state.time?.t_end);
-      const stiter = Number(state.time?.stiter) || 0;
       const niterDisabled = isNaN(n_steps) || n_steps < 0;
       const tendDisabled = isNaN(t_end) || t_end < 0;
 
@@ -4685,9 +4718,6 @@
       }
       if (!niterDisabled && n_steps <= 0) warnings.push(`n_steps = ${n_steps} — must be > 0`);
       if (!tendDisabled && t_end <= 0) warnings.push(`t_end = ${t_end} — must be > 0`);
-      if (stiter !== 0) {
-        warnings.push('stiter must be 0; use a restart file to resume a run.');
-      }
     }
 
     if (skey === 'global_output') {
@@ -4916,7 +4946,7 @@
   // ---- Preview ----
   function updatePreview() {
     try {
-      document.getElementById('preview-text').textContent = generateInputFile(state, currentDim, currentBuild);
+      document.getElementById('preview-text').textContent = generateInputFile(state, currentDim, currentBuild, {comments: showComments});
       document.getElementById('btn-generate').disabled = false;
       document.getElementById('btn-copy').disabled = false;
     } catch (err) {
@@ -4928,7 +4958,7 @@
 
   // ---- Actions ----
   function onGenerate() {
-    const text = generateInputFile(state, currentDim, currentBuild);
+    const text = document.getElementById('preview-text').textContent;
     const blob = new Blob([text], { type: 'text/plain' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -5553,7 +5583,7 @@
         `<div class="search-result" data-section="${r.sectionKey}" data-key="${r.fieldKey}">` +
         `<span class="search-field">${r.label}</span>` +
         `<span class="search-section">${r.sectionLabel}</span>` +
-        (r.hint ? `<span class="search-hint">${r.hint.length > 60 ? r.hint.slice(0, 60) + '...' : r.hint}</span>` : '') +
+        (r.hint ? `<span class="search-hint">${formatMathLabel(r.hint)}</span>` : '') +
         `</div>`
       ).join('');
       dropdown.classList.remove('hidden');

@@ -17,6 +17,7 @@ const puppeteer = require(process.env.PUPPETEER_MODULE || 'puppeteer');
     await page.goto(pathToFileURL(path.resolve(__dirname, '../index.html')).href, {waitUntil: 'domcontentloaded'});
     await page.waitForSelector('#preview-text');
     const preview = () => page.$eval('#preview-text', element => element.textContent);
+    assert.equal(await page.$eval('#preview-comments', element => element.checked), true);
     assert.equal(await page.$('[data-section="boundary_conditions"][data-key="vsh"], [data-section="boundary_conditions"][data-key="compress_ratio"]'), null);
     assert.doesNotMatch(await preview(), /\bvsh\b|\bcompress_ratio\b/);
     async function load(name, text, success = true) {
@@ -384,27 +385,51 @@ const puppeteer = require(process.env.PUPPETEER_MODULE || 'puppeteer');
       assert.equal(await page.$eval(`[data-section="ext_force"][data-key="${key}"]`, el => Number(el.value)), value + 1);
       assert.equal(restoredForcing[key], value + 1);
     }
-    // The downloaded input contains the displayed assignments and comments.
+    // Hiding comments preserves values containing !; copy and download match the preview.
+    await edit('[data-section="species"][data-key="name"]', 'ion! "quoted"');
+    await edit('[data-section="species"][data-key="number_density"]', 'if(x!=0,1.,0.)');
+    const withComments = await preview();
+    await page.click('#preview-comments');
+    const withoutComments = await preview();
+    assert.equal(await page.evaluate(text => maskNamelistText(text), withoutComments), withoutComments);
+    assert.match(withoutComments, /name="ion! ""quoted"""/);
+    assert.match(withoutComments, /number_density="if\(x!=0,1\.,0\.\)"/);
+    assert.deepEqual(await page.evaluate(text => parseInputFile(text), withoutComments), await page.evaluate(text => parseInputFile(text), withComments));
+    await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', {
+      value: {writeText: async text => { window.copiedInput = text; }},
+    }));
     const session = await browser.target().createCDPSession();
     await session.send('Browser.setDownloadBehavior', {behavior: 'allow', downloadPath: directory, eventsEnabled: true});
-    const started = new Promise(resolve => session.once('Browser.downloadWillBegin', resolve));
-    const downloaded = new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Input download timed out.')), 10000);
-      session.on('Browser.downloadProgress', event => {
-        if (event.state === 'inProgress') return;
-        clearTimeout(timeout);
-        if (event.state === 'completed') resolve();
-        else reject(new Error(`Input download ${event.state}.`));
+    for (const comments of [false, true]) {
+      if (comments) {
+        await page.click('#preview-comments');
+        assert.match(await preview(), /^!.*generated/m);
+        assert.match(await preview(), /! Species name/);
+      }
+      output = await preview();
+      await page.click('#btn-copy');
+      assert.equal(await page.evaluate(() => window.copiedInput), output);
+      const started = new Promise(resolve => session.once('Browser.downloadWillBegin', resolve));
+      const downloaded = new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Input download timed out.')), 10000);
+        const progress = event => {
+          if (event.state === 'inProgress') return;
+          clearTimeout(timeout);
+          session.off('Browser.downloadProgress', progress);
+          if (event.state === 'completed') resolve();
+          else reject(new Error(`Input download ${event.state}.`));
+        };
+        session.on('Browser.downloadProgress', progress);
       });
-    });
-    output = await preview();
-    await page.click('#btn-generate');
-    await downloaded;
-    const {suggestedFilename} = await started;
-    const withoutTimestamp = text => text.replace(/^!   Generated:.*$/m, '');
-    assert.equal(withoutTimestamp(fs.readFileSync(path.join(directory, suggestedFilename), 'utf8')), withoutTimestamp(output));
+      await page.click('#btn-generate');
+      await downloaded;
+      const {suggestedFilename} = await started;
+      const downloadPath = path.join(directory, suggestedFilename);
+      assert.equal(fs.readFileSync(downloadPath, 'utf8'), output);
+      fs.unlinkSync(downloadPath);
+    }
     assert.deepEqual(errors, []);
-    console.log('PASS: browser optimizer targets/apply, load/report, conditional fields, failed/fresh loads, omitted array edit, injector creation, and download.');
+    console.log('PASS: browser optimizer targets/apply, load/report, conditional fields, failed/fresh loads, omitted array edit, injector creation, comment toggle, copy, and download.');
   } finally {
     await browser.close();
     fs.rmSync(directory, {recursive: true, force: true});

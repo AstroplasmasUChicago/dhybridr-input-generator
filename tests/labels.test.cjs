@@ -55,7 +55,7 @@ const puppeteer = require(process.env.PUPPETEER_MODULE || 'puppeteer');
     await check('grid_space', 'boundary_types', 0, 'x_l');
     await check('node_conf', 'ranks', 0, 'x', false);
     await check('species', 'u_drift', 0, 'u_x');
-    await check('species', 'u_drift_profile', 0, 'u_x');
+    await check('species', 'u_drift_profile', 0, 'u_x(\\mathbf{x})');
     await check('species', 'initial_bounds', 0, 'x_{\\min}');
     await check('field_diag', 'dump_E', 1, '\\vec{E}', false);
     assert.match((await label('field_diag', 'dump_E', 1)).text, /^Self /);
@@ -69,7 +69,7 @@ const puppeteer = require(process.env.PUPPETEER_MODULE || 'puppeteer');
     await page.click(`${plotSelect} .cs-button`);
     await page.click(`${plotSelect} .cs-option:nth-child(2)`);
     assert.equal(await page.$eval('#u_drift_profile-component', element => element.value), 'vx');
-    assert.equal(await page.$eval(`${plotSelect} .cs-button [data-tex]`, element => element.dataset.tex), 'u_x');
+    assert.equal(await page.$eval(`${plotSelect} .cs-button [data-tex]`, element => element.dataset.tex), 'u_x(\\mathbf{x})');
     assert.ok(await page.$(`${plotSelect} .cs-button .katex msub`));
     assert.equal(await preview(), beforeMath);
 
